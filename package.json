@@ -1,0 +1,14 @@
+{
+  "name": "garment-costing-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Costing module for a ladies' garment (kurti) manufacturer - owner design/costing entry and production actual-consumption entry",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "multer": "^2.2.0"
+  }
+}

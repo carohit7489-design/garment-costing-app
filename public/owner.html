@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Owner - Design & Costing</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<header class="top">
+  <h1>Garment Costing Module</h1>
+  <nav>
+    <a href="owner.html" class="active">Owner - Design &amp; Costing</a>
+    <a href="production.html">Production - Actual Consumption</a>
+    <a href="#" id="logoutLink" style="display:none;">Log out</a>
+  </nav>
+</header>
+
+<div class="login-overlay" id="loginOverlay">
+  <div class="login-box">
+    <h2>Owner Login</h2>
+    <p style="color:var(--muted); font-size:13px; margin-top:0;">This page has design &amp; pricing details. Enter the owner password to continue.</p>
+    <input id="loginPassword" type="password" placeholder="Password" autocomplete="current-password" />
+    <button class="btn-primary" id="loginBtn" style="width:100%; margin-top:10px;">Login</button>
+    <div id="loginError" class="login-error"></div>
+  </div>
+</div>
+
+<main id="appMain" style="display:none;">
+  <section class="panel">
+    <h2>Styles</h2>
+    <button class="btn-primary" id="newStyleBtn" style="width:100%; margin-bottom:12px;">+ New Style</button>
+    <ul class="style-list" id="styleList"></ul>
+  </section>
+
+  <section class="panel">
+    <h2 id="formTitle">New Style - Design &amp; Component Sheet</h2>
+
+    <div class="form-grid">
+      <div class="field">
+        <label>Style No.</label>
+        <input id="styleNo" placeholder="e.g. KRT-2026-001" />
+      </div>
+      <div class="field">
+        <label>Style Name / Description</label>
+        <input id="styleName" placeholder="e.g. Anarkali Kurti - Print" />
+      </div>
+      <div class="field">
+        <label>Buyer / Customer</label>
+        <input id="buyer" placeholder="e.g. Fashion Retail Co." />
+      </div>
+      <div class="field">
+        <label>Season</label>
+        <input id="season" placeholder="e.g. SS26" />
+      </div>
+      <div class="field">
+        <label>Minimum Order Qty (pcs)</label>
+        <input id="orderQty" type="number" min="0" placeholder="e.g. 500" />
+      </div>
+      <div class="field">
+        <label>Currency</label>
+        <input id="currency" value="INR" />
+      </div>
+    </div>
+
+    <div class="design-section">
+      <label class="design-label">Design Image</label>
+      <div class="design-upload-row">
+        <div class="design-preview" id="designPreviewWrap">
+          <img id="designPreview" alt="Design preview" style="display:none;" />
+          <span id="designPreviewEmpty">No image uploaded</span>
+        </div>
+        <div class="design-upload-controls">
+          <input type="file" id="designImageInput" accept="image/*" />
+          <button type="button" class="btn-small" id="removeImageBtn" style="display:none; margin-top:8px;">Remove image</button>
+        </div>
+      </div>
+    </div>
+
+    <table class="comp-table" id="compTable">
+      <thead>
+        <tr>
+          <th style="width:110px;">Category</th>
+          <th>Component / Material Description</th>
+          <th style="width:110px;">Est. Consumption</th>
+          <th style="width:70px;">UOM</th>
+          <th style="width:100px;">Rate/Unit</th>
+          <th style="width:80px;">Wastage %</th>
+          <th style="width:100px;">Est. Cost/Garment</th>
+          <th style="width:36px;"></th>
+        </tr>
+      </thead>
+      <tbody id="compRows"></tbody>
+      <tfoot>
+        <tr>
+          <td colspan="6" style="text-align:right;">Estimated Cost per Garment</td>
+          <td class="cost-cell" id="totalPerGarment">0.00</td>
+          <td></td>
+        </tr>
+      </tfoot>
+    </table>
+
+    <button class="btn-secondary" id="addRowBtn">+ Add Component</button>
+
+    <div class="summary-bar" style="margin-top:16px;">
+      <div>Est. Cost / Garment<strong id="sumPerGarment">-</strong></div>
+      <div>Minimum Order Qty<strong id="sumOrderQty">-</strong></div>
+      <div>Est. Total Value (MOQ)<strong id="sumTotalValue">-</strong></div>
+    </div>
+
+    <div class="actions-row">
+      <div id="statusText" style="color:#64748b; font-size:12px;"></div>
+      <button class="btn-primary" id="saveBtn">Save Component Sheet</button>
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="owner.js"></script>
+</body>
+</html>
