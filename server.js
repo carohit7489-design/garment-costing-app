@@ -107,6 +107,8 @@ app.get("/api/owner/session", (req, res) => {
   res.json({ authenticated: isAuthenticated(req) });
 });
 
+app.get("/", (req, res) => res.redirect("/production.html"));
+
 app.use(express.static(path.join(__dirname, "public")));
 
 function readStyles() {
