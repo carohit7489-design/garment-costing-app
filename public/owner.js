@@ -1,6 +1,19 @@
 const SIZES = ["40", "42", "44", "46", "48", "50", "52"];
 const PART_KEYS = ["kurta", "pant", "dupatta"];
 const PART_LABELS = { kurta: "Kurta", pant: "Pant", dupatta: "Dupatta" };
+const PROCESS_TYPES = [
+  "Cutting",
+  "Stitching",
+  "Finishing",
+  "Pin Tucks",
+  "Lace",
+  "Computer Embroidery Border",
+  "Computer Embroidery Yoke",
+  "Adda Work",
+  "Tussel",
+  "MOH + Material",
+  "Other",
+];
 
 let currentStyleId = null; // null = creating a new style
 let colors = [];
@@ -207,6 +220,16 @@ function renderComponentRow(partKey, row, idx) {
     ? `<span style="color:var(--muted); font-size:12px;">-</span>`
     : `<input data-part="${partKey}" data-idx="${idx}" data-field="received" type="checkbox" ${row.received ? "checked" : ""} />`;
 
+  const knownProcess = PROCESS_TYPES.includes(row.description) ? row.description : "Other";
+  const descriptionCell = isFabric
+    ? `<input data-part="${partKey}" data-idx="${idx}" data-field="description" value="${escapeAttr(row.description)}" placeholder="e.g. Self Fabric - Rayon" />`
+    : `
+      <select data-part="${partKey}" data-idx="${idx}" data-field="processName">
+        ${PROCESS_TYPES.map((p) => `<option value="${p}" ${p === knownProcess ? "selected" : ""}>${p}</option>`).join("")}
+      </select>
+      ${knownProcess === "Other" ? `<input data-part="${partKey}" data-idx="${idx}" data-field="description" value="${escapeAttr(row.description)}" placeholder="Specify process" style="margin-top:4px;" />` : ""}
+    `;
+
   return `
     <tr>
       <td>
@@ -215,7 +238,7 @@ function renderComponentRow(partKey, row, idx) {
           <option value="Process" ${!isFabric ? "selected" : ""}>Process</option>
         </select>
       </td>
-      <td><input data-part="${partKey}" data-idx="${idx}" data-field="description" value="${escapeAttr(row.description)}" placeholder="e.g. Self Fabric / Cutting / Embroidery" /></td>
+      <td>${descriptionCell}</td>
       <td><input data-part="${partKey}" data-idx="${idx}" data-field="uom" value="${escapeAttr(row.uom)}" placeholder="Mtr/Pcs" /></td>
       <td><input data-part="${partKey}" data-idx="${idx}" data-field="rate" type="number" step="0.01" min="0" value="${row.rate}" /></td>
       <td>${consumptionCell}</td>
@@ -278,7 +301,7 @@ el("partsContainer").addEventListener("input", (e) => {
     return;
   }
   const field = t.dataset.field;
-  if (!field || field === "type") return;
+  if (!field || field === "type" || field === "processName") return;
   const row = parts[t.dataset.part].components[Number(t.dataset.idx)];
   if (field === "sizeConsumption") {
     row.sizeConsumption[t.dataset.size] = Number(t.value) || 0;
@@ -312,6 +335,12 @@ el("partsContainer").addEventListener("change", (e) => {
     replacement.uom = row.uom;
     replacement.rate = row.rate;
     parts[t.dataset.part].components[Number(t.dataset.idx)] = replacement;
+    renderParts();
+    return;
+  }
+  if (t.dataset.field === "processName") {
+    const row = parts[t.dataset.part].components[Number(t.dataset.idx)];
+    row.description = t.value === "Other" ? "" : t.value;
     renderParts();
   }
 });
