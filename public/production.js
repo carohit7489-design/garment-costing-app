@@ -58,11 +58,15 @@ function buildActualLines() {
     actualData[key] = !part.enabled
       ? []
       : part.components.map((c) => ({
+          index: c.index,
           type: c.type,
           description: c.description,
           uom: c.uom,
           estConsumption: estConsumptionFor(c, selectedSize),
           actualConsumption: "",
+          vendor: c.vendor || "",
+          billNo: c.billNo || "",
+          received: !!c.received,
         }));
   });
 }
@@ -136,6 +140,16 @@ function renderPartActualTable(partKey) {
       const variance = row.actualConsumption === "" ? null : Number(row.actualConsumption) - row.estConsumption;
       const varianceText = variance === null ? "-" : (variance > 0 ? "+" : "") + variance.toFixed(2);
       const color = variance > 0 ? "#c0392b" : variance < 0 ? "#1a7a3c" : "#64748b";
+      const isProcess = row.type === "Process";
+      const vendorCell = isProcess
+        ? `<input data-part="${partKey}" data-idx="${idx}" data-status-field="vendor" value="${escapeAttr(row.vendor)}" placeholder="Vendor" style="max-width:110px;" />`
+        : `<span style="color:var(--muted); font-size:12px;">-</span>`;
+      const billCell = isProcess
+        ? `<input data-part="${partKey}" data-idx="${idx}" data-status-field="billNo" value="${escapeAttr(row.billNo)}" placeholder="Bill No." style="max-width:100px;" />`
+        : `<span style="color:var(--muted); font-size:12px;">-</span>`;
+      const receivedCell = isProcess
+        ? `<input data-part="${partKey}" data-idx="${idx}" data-status-field="received" type="checkbox" ${row.received ? "checked" : ""} />`
+        : `<span style="color:var(--muted); font-size:12px;">-</span>`;
       return `
         <tr>
           <td>${escapeAttr(row.type)}</td>
@@ -144,6 +158,9 @@ function renderPartActualTable(partKey) {
           <td>${row.estConsumption}</td>
           <td><input class="actual-input" data-part="${partKey}" data-idx="${idx}" type="number" step="0.01" min="0" value="${row.actualConsumption}" placeholder="Enter actual" /></td>
           <td style="color:${color};" data-variance-cell="${partKey}-${idx}">${varianceText}</td>
+          <td>${vendorCell}</td>
+          <td>${billCell}</td>
+          <td style="text-align:center;">${receivedCell}</td>
         </tr>
       `;
     })
@@ -152,12 +169,15 @@ function renderPartActualTable(partKey) {
     <table class="comp-table">
       <thead>
         <tr>
-          <th style="width:100px;">Type</th>
+          <th style="width:90px;">Type</th>
           <th>Description</th>
-          <th style="width:70px;">UOM</th>
-          <th style="width:110px;">Est. Consumption</th>
-          <th style="width:140px;">Actual Consumption</th>
-          <th style="width:90px;">Variance</th>
+          <th style="width:60px;">UOM</th>
+          <th style="width:100px;">Est. Consumption</th>
+          <th style="width:130px;">Actual Consumption</th>
+          <th style="width:80px;">Variance</th>
+          <th style="width:110px;">Vendor</th>
+          <th style="width:100px;">Bill No.</th>
+          <th style="width:70px;">Received</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
@@ -168,6 +188,7 @@ function renderPartActualTable(partKey) {
 el("partsActualContainer").addEventListener("input", (e) => {
   const t = e.target;
   if (!t.dataset.part) return;
+  if (t.dataset.statusField) return; // handled separately below
   const partKey = t.dataset.part;
   const idx = Number(t.dataset.idx);
   const row = actualData[partKey][idx];
@@ -181,6 +202,47 @@ el("partsActualContainer").addEventListener("input", (e) => {
     cell.style.color = variance > 0 ? "#c0392b" : variance < 0 ? "#1a7a3c" : "#64748b";
   }
 });
+
+// Vendor/Bill No./Received save immediately (job-work status, independent
+// of the "Save Actual Consumption" batch action below).
+async function saveComponentStatus(partKey, idx) {
+  const row = actualData[partKey][idx];
+  await fetch(`/api/styles/${currentStyle.id}/parts/${partKey}/components/${row.index}/status`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ vendor: row.vendor, billNo: row.billNo, received: row.received }),
+  });
+}
+
+el("partsActualContainer").addEventListener("input", (e) => {
+  const t = e.target;
+  if (!t.dataset.statusField || t.dataset.statusField === "received") return;
+  const partKey = t.dataset.part;
+  const idx = Number(t.dataset.idx);
+  actualData[partKey][idx][t.dataset.statusField] = t.value;
+});
+
+el("partsActualContainer").addEventListener("change", (e) => {
+  const t = e.target;
+  if (!t.dataset.statusField) return;
+  const partKey = t.dataset.part;
+  const idx = Number(t.dataset.idx);
+  if (t.dataset.statusField === "received") {
+    actualData[partKey][idx].received = t.checked;
+  }
+  saveComponentStatus(partKey, idx).then(() => toast("Saved"));
+});
+
+el("partsActualContainer").addEventListener(
+  "blur",
+  (e) => {
+    const t = e.target;
+    if (t.dataset.statusField && t.dataset.statusField !== "received") {
+      saveComponentStatus(t.dataset.part, Number(t.dataset.idx)).then(() => toast("Saved"));
+    }
+  },
+  true
+);
 
 el("sizeSelect").addEventListener("change", (e) => {
   selectedSize = e.target.value;

@@ -281,12 +281,18 @@ app.get("/api/styles/:id/production-view", (req, res) => {
     const part = style.parts[key];
     parts[key] = {
       enabled: part.enabled,
-      components: part.components.map((c) => ({
+      components: part.components.map((c, index) => ({
+        index,
         type: c.type,
         description: c.description,
         uom: c.uom,
         consumption: c.consumption,
         sizeConsumption: c.sizeConsumption,
+        // Vendor/Bill No./Received are job-work tracking, not pricing -
+        // safe to expose and let production update, unlike rate.
+        vendor: c.type === "Process" ? c.vendor : undefined,
+        billNo: c.type === "Process" ? c.billNo : undefined,
+        received: c.type === "Process" ? c.received : undefined,
       })),
     };
   }
@@ -303,6 +309,32 @@ app.get("/api/styles/:id/production-view", (req, res) => {
     designImagePath: style.designImagePath || null,
     actuals: style.actuals || [],
   });
+});
+
+// Lets production update job-work tracking (vendor/bill/received) on a
+// Process row without touching rate or any other pricing field. No owner
+// auth - this is operational status, not costing data.
+app.put("/api/styles/:id/parts/:partKey/components/:index/status", (req, res) => {
+  const { partKey, index } = req.params;
+  if (!PART_KEYS.includes(partKey)) return res.status(400).json({ error: "Invalid part" });
+
+  const styles = readStyles();
+  const idx = styles.findIndex((s) => s.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: "Style not found" });
+
+  const component = styles[idx].parts[partKey].components[Number(index)];
+  if (!component || component.type !== "Process") {
+    return res.status(404).json({ error: "Component not found" });
+  }
+
+  const body = req.body;
+  if (body.vendor !== undefined) component.vendor = body.vendor;
+  if (body.billNo !== undefined) component.billNo = body.billNo;
+  if (body.received !== undefined) component.received = !!body.received;
+
+  styles[idx].updatedAt = new Date().toISOString();
+  writeStyles(styles);
+  res.json({ ok: true });
 });
 
 function parseParts(raw) {
