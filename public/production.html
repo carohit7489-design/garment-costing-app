@@ -37,7 +37,11 @@
         <div>Minimum Order Qty<strong id="infoMoq">-</strong></div>
       </div>
 
-      <div class="form-grid" style="grid-template-columns: repeat(3, 1fr);">
+      <div class="form-grid" style="grid-template-columns: repeat(4, 1fr);">
+        <div class="field">
+          <label>Size</label>
+          <select id="sizeSelect"></select>
+        </div>
         <div class="field">
           <label>Actual Produced Qty (pcs)</label>
           <input id="actualQty" type="number" min="0" placeholder="e.g. 480" />
@@ -52,19 +56,7 @@
         </div>
       </div>
 
-      <table class="comp-table" id="actualTable">
-        <thead>
-          <tr>
-            <th style="width:110px;">Category</th>
-            <th>Component / Material</th>
-            <th style="width:70px;">UOM</th>
-            <th style="width:120px;">Est. Consumption</th>
-            <th style="width:140px;">Actual Consumption</th>
-            <th style="width:100px;">Variance</th>
-          </tr>
-        </thead>
-        <tbody id="actualRows"></tbody>
-      </table>
+      <div id="partsActualContainer"></div>
 
       <div class="actions-row">
         <div id="statusText" style="color:#64748b; font-size:12px;"></div>

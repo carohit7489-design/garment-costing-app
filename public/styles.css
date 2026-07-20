@@ -235,6 +235,55 @@ tfoot td {
 .toast.show { opacity: 1; transform: translateY(0); }
 .toast.error { background: var(--red); }
 
+.part-block {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  margin-bottom: 16px;
+}
+.part-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.part-header label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: bold;
+  color: var(--navy);
+  font-size: 14px;
+}
+.part-header input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+}
+.size-inputs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.size-input-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 48px;
+}
+.size-input-group span {
+  font-size: 10px;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+.size-input-group input {
+  width: 100%;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 12px;
+  text-align: center;
+}
+
 .design-section {
   margin-bottom: 16px;
 }

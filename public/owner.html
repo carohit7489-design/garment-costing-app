@@ -77,36 +77,18 @@
       </div>
     </div>
 
-    <table class="comp-table" id="compTable">
-      <thead>
-        <tr>
-          <th style="width:110px;">Category</th>
-          <th>Component / Material Description</th>
-          <th style="width:110px;">Est. Consumption</th>
-          <th style="width:70px;">UOM</th>
-          <th style="width:100px;">Rate/Unit</th>
-          <th style="width:80px;">Wastage %</th>
-          <th style="width:100px;">Est. Cost/Garment</th>
-          <th style="width:36px;"></th>
-        </tr>
-      </thead>
-      <tbody id="compRows"></tbody>
-      <tfoot>
-        <tr>
-          <td colspan="6" style="text-align:right;">Estimated Cost per Garment</td>
-          <td class="cost-cell" id="totalPerGarment">0.00</td>
-          <td></td>
-        </tr>
-      </tfoot>
-    </table>
+    <div id="partsContainer"></div>
 
-    <button class="btn-secondary" id="addRowBtn">+ Add Component</button>
-
-    <div class="summary-bar" style="margin-top:16px;">
-      <div>Est. Cost / Garment<strong id="sumPerGarment">-</strong></div>
-      <div>Minimum Order Qty<strong id="sumOrderQty">-</strong></div>
-      <div>Est. Total Value (MOQ)<strong id="sumTotalValue">-</strong></div>
-    </div>
+    <section class="panel" style="margin-top:16px;">
+      <h2>Cost Summary by Size</h2>
+      <table class="comp-table" id="costSummaryTable">
+        <thead><tr id="costSummaryHead"></tr></thead>
+        <tbody id="costSummaryBody"></tbody>
+      </table>
+      <div class="summary-bar" style="margin-top:12px;">
+        <div>Minimum Order Qty<strong id="sumOrderQty">-</strong></div>
+      </div>
+    </section>
 
     <div class="actions-row">
       <div id="statusText" style="color:#64748b; font-size:12px;"></div>

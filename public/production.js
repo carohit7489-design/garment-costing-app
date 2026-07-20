@@ -1,5 +1,10 @@
+const SIZES = ["38", "40", "42", "44", "Plus"];
+const PART_KEYS = ["kurta", "pant", "dupatta"];
+const PART_LABELS = { kurta: "Kurta", pant: "Pant", dupatta: "Dupatta" };
+
 let currentStyle = null;
-let actualLines = []; // [{ componentIdx, description, uom, estConsumption, actualConsumption }]
+let selectedSize = SIZES[0];
+let actualData = {}; // { kurta: [{category,description,uom,estConsumption,actualConsumption}], pant:[...], dupatta:[...] }
 
 const el = (id) => document.getElementById(id);
 
@@ -13,6 +18,8 @@ function toast(msg, isError) {
 function escapeAttr(s) {
   return String(s ?? "").replace(/"/g, "&quot;");
 }
+
+el("sizeSelect").innerHTML = SIZES.map((s) => `<option value="${s}">${s}</option>`).join("");
 
 async function loadStyleList(selectId) {
   const res = await fetch("/api/styles");
@@ -35,6 +42,28 @@ async function loadStyleList(selectId) {
       li.addEventListener("click", () => openStyle(s.id));
       list.appendChild(li);
     });
+}
+
+function estConsumptionFor(component, size) {
+  return component.category === "Fabric"
+    ? Number(component.sizeConsumption?.[size]) || 0
+    : Number(component.consumption) || 0;
+}
+
+function buildActualLines() {
+  actualData = {};
+  PART_KEYS.forEach((key) => {
+    const part = currentStyle.parts[key];
+    actualData[key] = !part.enabled
+      ? []
+      : part.components.map((c) => ({
+          category: c.category,
+          description: c.description,
+          uom: c.uom,
+          estConsumption: estConsumptionFor(c, selectedSize),
+          actualConsumption: "",
+        }));
+  });
 }
 
 async function openStyle(id) {
@@ -65,58 +94,92 @@ async function openStyle(id) {
   el("actualQty").value = "";
   el("prodDate").value = new Date().toISOString().slice(0, 10);
   el("filledBy").value = "";
+  el("sizeSelect").value = selectedSize;
 
-  actualLines = s.components.map((c, idx) => ({
-    componentIdx: idx,
-    category: c.category,
-    description: c.description,
-    uom: c.uom,
-    estConsumption: Number(c.consumption) || 0,
-    actualConsumption: "",
-  }));
-
-  renderActualTable();
+  buildActualLines();
+  renderPartsActual();
   renderHistory();
   loadStyleList(id);
 }
 
-function renderActualTable() {
-  const body = el("actualRows");
-  body.innerHTML = "";
-  actualLines.forEach((row, idx) => {
-    const variance = row.actualConsumption === "" ? null : Number(row.actualConsumption) - row.estConsumption;
-    const varianceText = variance === null ? "-" : (variance > 0 ? "+" : "") + variance.toFixed(2);
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${escapeAttr(row.category)}</td>
-      <td>${escapeAttr(row.description)}</td>
-      <td>${escapeAttr(row.uom)}</td>
-      <td>${row.estConsumption}</td>
-      <td><input class="actual-input" data-idx="${idx}" type="number" step="0.01" min="0" value="${row.actualConsumption}" placeholder="Enter actual" /></td>
-      <td style="color:${variance > 0 ? '#c0392b' : variance < 0 ? '#1a7a3c' : '#64748b'};">${varianceText}</td>
-    `;
-    body.appendChild(tr);
-  });
-
-  body.querySelectorAll("input").forEach((input) => {
-    input.addEventListener("input", (e) => {
-      const idx = Number(e.target.dataset.idx);
-      actualLines[idx].actualConsumption = e.target.value;
-      updateVarianceCell(idx);
-    });
-  });
+function renderPartsActual() {
+  const container = el("partsActualContainer");
+  const enabledParts = PART_KEYS.filter((key) => currentStyle.parts[key].enabled);
+  if (enabledParts.length === 0) {
+    container.innerHTML = '<div class="empty-state">This style has no parts with components yet.</div>';
+    return;
+  }
+  container.innerHTML = enabledParts
+    .map(
+      (key) => `
+        <div class="part-block">
+          <div class="part-header"><label>${PART_LABELS[key]}</label></div>
+          ${renderPartActualTable(key)}
+        </div>
+      `
+    )
+    .join("");
 }
 
-function updateVarianceCell(idx) {
-  const row = actualLines[idx];
+function renderPartActualTable(partKey) {
+  const rows = actualData[partKey]
+    .map((row, idx) => {
+      const variance = row.actualConsumption === "" ? null : Number(row.actualConsumption) - row.estConsumption;
+      const varianceText = variance === null ? "-" : (variance > 0 ? "+" : "") + variance.toFixed(2);
+      const color = variance > 0 ? "#c0392b" : variance < 0 ? "#1a7a3c" : "#64748b";
+      return `
+        <tr>
+          <td>${escapeAttr(row.category)}</td>
+          <td>${escapeAttr(row.description)}</td>
+          <td>${escapeAttr(row.uom)}</td>
+          <td>${row.estConsumption}</td>
+          <td><input class="actual-input" data-part="${partKey}" data-idx="${idx}" type="number" step="0.01" min="0" value="${row.actualConsumption}" placeholder="Enter actual" /></td>
+          <td style="color:${color};" data-variance-cell="${partKey}-${idx}">${varianceText}</td>
+        </tr>
+      `;
+    })
+    .join("");
+  return `
+    <table class="comp-table">
+      <thead>
+        <tr>
+          <th style="width:100px;">Category</th>
+          <th>Component / Material</th>
+          <th style="width:70px;">UOM</th>
+          <th style="width:110px;">Est. Consumption</th>
+          <th style="width:140px;">Actual Consumption</th>
+          <th style="width:90px;">Variance</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+el("partsActualContainer").addEventListener("input", (e) => {
+  const t = e.target;
+  if (!t.dataset.part) return;
+  const partKey = t.dataset.part;
+  const idx = Number(t.dataset.idx);
+  const row = actualData[partKey][idx];
+  row.actualConsumption = t.value;
+
   const variance = row.actualConsumption === "" ? null : Number(row.actualConsumption) - row.estConsumption;
   const varianceText = variance === null ? "-" : (variance > 0 ? "+" : "") + variance.toFixed(2);
-  const cell = document.querySelector(`#actualRows tr:nth-child(${idx + 1}) td:last-child`);
+  const cell = document.querySelector(`[data-variance-cell="${partKey}-${idx}"]`);
   if (cell) {
     cell.textContent = varianceText;
     cell.style.color = variance > 0 ? "#c0392b" : variance < 0 ? "#1a7a3c" : "#64748b";
   }
-}
+});
+
+el("sizeSelect").addEventListener("change", (e) => {
+  selectedSize = e.target.value;
+  if (currentStyle) {
+    buildActualLines();
+    renderPartsActual();
+  }
+});
 
 function renderHistory() {
   const container = el("historyList");
@@ -130,30 +193,40 @@ function renderHistory() {
     .reverse()
     .map((e) => {
       const linesHtml = e.lines
-        .map((l) => `${escapeAttr(l.description)}: ${l.actualConsumption} ${escapeAttr(l.uom)} (est. ${l.estConsumption})`)
+        .map((l) => `${escapeAttr(l.part ? PART_LABELS[l.part] + " - " : "")}${escapeAttr(l.description)}: ${l.actualConsumption} ${escapeAttr(l.uom)} (est. ${l.estConsumption})`)
         .join(" · ");
-      return `<div class="hist-item"><strong>${e.productionDate || "-"}</strong> · Produced ${e.actualProducedQty} pcs · Filled by ${escapeAttr(e.filledBy || "-")}<br/>${linesHtml}</div>`;
+      return `<div class="hist-item"><strong>${e.productionDate || "-"}</strong> · Size ${escapeAttr(e.size || "-")} · Produced ${e.actualProducedQty} pcs · Filled by ${escapeAttr(e.filledBy || "-")}<br/>${linesHtml}</div>`;
     })
     .join("");
 }
 
 async function saveActuals() {
   if (!currentStyle) return;
-  const incomplete = actualLines.some((l) => l.actualConsumption === "");
+  const allLines = [];
+  PART_KEYS.forEach((key) => {
+    actualData[key].forEach((l) => {
+      allLines.push({
+        part: key,
+        category: l.category,
+        description: l.description,
+        uom: l.uom,
+        estConsumption: l.estConsumption,
+        actualConsumption: Number(l.actualConsumption) || 0,
+      });
+    });
+  });
+
+  const incomplete = PART_KEYS.some((key) => actualData[key].some((l) => l.actualConsumption === ""));
   if (incomplete && !confirm("Some components have no actual consumption entered. Save anyway?")) {
     return;
   }
+
   const payload = {
+    size: selectedSize,
     filledBy: el("filledBy").value.trim(),
     productionDate: el("prodDate").value,
     actualProducedQty: Number(el("actualQty").value) || 0,
-    lines: actualLines.map((l) => ({
-      description: l.description,
-      category: l.category,
-      uom: l.uom,
-      estConsumption: l.estConsumption,
-      actualConsumption: Number(l.actualConsumption) || 0,
-    })),
+    lines: allLines,
   };
 
   const res = await fetch(`/api/styles/${currentStyle.id}/actuals`, {

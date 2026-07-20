@@ -1,7 +1,10 @@
+const SIZES = ["38", "40", "42", "44", "Plus"];
+const PART_KEYS = ["kurta", "pant", "dupatta"];
+const PART_LABELS = { kurta: "Kurta", pant: "Pant", dupatta: "Dupatta" };
 const CATEGORIES = ["Fabric", "Trim", "CM", "Overhead", "Other"];
 
 let currentStyleId = null; // null = creating a new style
-let components = [];
+let parts = defaultParts();
 let existingDesignImagePath = null; // design image already saved on the server, if any
 let removeImageRequested = false;
 
@@ -14,86 +17,200 @@ function toast(msg, isError) {
   setTimeout(() => (t.className = "toast"), 2500);
 }
 
-function newComponentRow() {
-  return { category: "Fabric", description: "", consumption: 0, uom: "Mtr", rate: 0, wastagePct: 0 };
-}
-
-function costOf(row) {
-  const cons = Number(row.consumption) || 0;
-  const rate = Number(row.rate) || 0;
-  const waste = Number(row.wastagePct) || 0;
-  return cons * rate * (1 + waste / 100);
-}
-
-function renderComponents() {
-  const body = el("compRows");
-  body.innerHTML = "";
-  components.forEach((row, idx) => {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>
-        <select data-idx="${idx}" data-field="category">
-          ${CATEGORIES.map((c) => `<option value="${c}" ${c === row.category ? "selected" : ""}>${c}</option>`).join("")}
-        </select>
-      </td>
-      <td><input data-idx="${idx}" data-field="description" value="${escapeAttr(row.description)}" placeholder="e.g. Self Fabric - Rayon" /></td>
-      <td><input data-idx="${idx}" data-field="consumption" type="number" step="0.01" min="0" value="${row.consumption}" /></td>
-      <td><input data-idx="${idx}" data-field="uom" value="${escapeAttr(row.uom)}" placeholder="Mtr/Pcs" /></td>
-      <td><input data-idx="${idx}" data-field="rate" type="number" step="0.01" min="0" value="${row.rate}" /></td>
-      <td><input data-idx="${idx}" data-field="wastagePct" type="number" step="0.1" min="0" value="${row.wastagePct}" /></td>
-      <td class="cost-cell">${costOf(row).toFixed(2)}</td>
-      <td><button class="btn-small" data-idx="${idx}" data-action="remove">✕</button></td>
-    `;
-    body.appendChild(tr);
-  });
-
-  body.querySelectorAll("input, select").forEach((input) => {
-    input.addEventListener("input", (e) => {
-      const idx = Number(e.target.dataset.idx);
-      const field = e.target.dataset.field;
-      let val = e.target.value;
-      if (["consumption", "rate", "wastagePct"].includes(field)) val = Number(val) || 0;
-      components[idx][field] = val;
-      updateRowCost(idx);
-      updateTotals();
-    });
-  });
-
-  body.querySelectorAll('button[data-action="remove"]').forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      const idx = Number(e.target.dataset.idx);
-      components.splice(idx, 1);
-      renderComponents();
-      renderSummary();
-    });
-  });
-
-  updateTotals();
-}
-
-function updateRowCost(idx) {
-  const row = document.querySelector(`#compRows tr:nth-child(${idx + 1}) td.cost-cell`);
-  if (row) row.textContent = costOf(components[idx]).toFixed(2);
-}
-
-function updateTotals() {
-  const total = components.reduce((sum, r) => sum + costOf(r), 0);
-  el("totalPerGarment").textContent = total.toFixed(2);
-  renderSummary();
-}
-
 function escapeAttr(s) {
   return String(s ?? "").replace(/"/g, "&quot;");
 }
 
-function renderSummary() {
-  const total = components.reduce((sum, r) => sum + costOf(r), 0);
-  const qty = Number(el("orderQty").value) || 0;
-  const currency = el("currency").value || "";
-  el("sumPerGarment").textContent = `${currency} ${total.toFixed(2)}`;
-  el("sumOrderQty").textContent = qty ? qty.toLocaleString() : "-";
-  el("sumTotalValue").textContent = `${currency} ${(total * qty).toFixed(2)}`;
+function defaultSizeConsumption() {
+  return Object.fromEntries(SIZES.map((s) => [s, 0]));
 }
+
+function defaultPart() {
+  return { enabled: false, components: [] };
+}
+
+function defaultParts() {
+  return Object.fromEntries(PART_KEYS.map((k) => [k, defaultPart()]));
+}
+
+function newComponentRow(category = "Fabric") {
+  if (category === "Fabric") {
+    return { category, description: "", uom: "Mtr", rate: 0, wastagePct: 0, sizeConsumption: defaultSizeConsumption() };
+  }
+  return { category, description: "", uom: "Pcs", rate: 0, wastagePct: 0, consumption: 0 };
+}
+
+function costOfRow(row, size) {
+  const rate = Number(row.rate) || 0;
+  const waste = Number(row.wastagePct) || 0;
+  const cons = row.category === "Fabric" ? Number(row.sizeConsumption?.[size]) || 0 : Number(row.consumption) || 0;
+  return cons * rate * (1 + waste / 100);
+}
+
+function partSubtotal(partKey, size) {
+  const part = parts[partKey];
+  if (!part.enabled) return 0;
+  return part.components.reduce((sum, r) => sum + costOfRow(r, size), 0);
+}
+
+function grandTotal(size) {
+  return PART_KEYS.reduce((sum, k) => sum + partSubtotal(k, size), 0);
+}
+
+// ---- Rendering: parts & components ----
+
+function renderParts() {
+  const container = el("partsContainer");
+  container.innerHTML = PART_KEYS.map((key) => {
+    const part = parts[key];
+    return `
+      <div class="part-block">
+        <div class="part-header">
+          <label><input type="checkbox" data-action="toggle-part" data-part="${key}" ${part.enabled ? "checked" : ""}/> Include ${PART_LABELS[key]}</label>
+        </div>
+        ${part.enabled ? renderPartTable(key) : ""}
+      </div>
+    `;
+  }).join("");
+  renderCostSummary();
+}
+
+function renderPartTable(partKey) {
+  const rows = parts[partKey].components.map((row, idx) => renderComponentRow(partKey, row, idx)).join("");
+  return `
+    <table class="comp-table">
+      <thead>
+        <tr>
+          <th style="width:100px;">Category</th>
+          <th>Component / Material Description</th>
+          <th style="width:70px;">UOM</th>
+          <th style="width:90px;">Rate/Unit</th>
+          <th style="width:80px;">Wastage %</th>
+          <th style="width:300px;">Consumption per Garment (by size)</th>
+          <th style="width:36px;"></th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <button class="btn-secondary" type="button" data-action="add-row" data-part="${partKey}">+ Add Component</button>
+  `;
+}
+
+function renderComponentRow(partKey, row, idx) {
+  const consumptionCell =
+    row.category === "Fabric"
+      ? `<div class="size-inputs">${SIZES.map(
+          (sz) => `
+            <div class="size-input-group">
+              <span>${sz}</span>
+              <input data-part="${partKey}" data-idx="${idx}" data-field="sizeConsumption" data-size="${sz}" type="number" step="0.01" min="0" value="${row.sizeConsumption[sz]}" />
+            </div>`
+        ).join("")}</div>`
+      : `<input data-part="${partKey}" data-idx="${idx}" data-field="consumption" type="number" step="0.01" min="0" value="${row.consumption}" style="max-width:110px;" />`;
+
+  return `
+    <tr>
+      <td>
+        <select data-part="${partKey}" data-idx="${idx}" data-field="category">
+          ${CATEGORIES.map((c) => `<option value="${c}" ${c === row.category ? "selected" : ""}>${c}</option>`).join("")}
+        </select>
+      </td>
+      <td><input data-part="${partKey}" data-idx="${idx}" data-field="description" value="${escapeAttr(row.description)}" placeholder="e.g. Self Fabric - Rayon" /></td>
+      <td><input data-part="${partKey}" data-idx="${idx}" data-field="uom" value="${escapeAttr(row.uom)}" placeholder="Mtr/Pcs" /></td>
+      <td><input data-part="${partKey}" data-idx="${idx}" data-field="rate" type="number" step="0.01" min="0" value="${row.rate}" /></td>
+      <td><input data-part="${partKey}" data-idx="${idx}" data-field="wastagePct" type="number" step="0.1" min="0" value="${row.wastagePct}" /></td>
+      <td>${consumptionCell}</td>
+      <td><button class="btn-small" type="button" data-action="remove" data-part="${partKey}" data-idx="${idx}">✕</button></td>
+    </tr>
+  `;
+}
+
+function renderCostSummary() {
+  const head = el("costSummaryHead");
+  head.innerHTML = `<th style="text-align:left;">Part</th>` + SIZES.map((s) => `<th>${s}</th>`).join("");
+
+  const currency = el("currency").value || "";
+  let rows = "";
+  PART_KEYS.forEach((key) => {
+    if (!parts[key].enabled) return;
+    rows +=
+      `<tr><td style="text-align:left;">${PART_LABELS[key]}</td>` +
+      SIZES.map((s) => `<td class="cost-cell">${partSubtotal(key, s).toFixed(2)}</td>`).join("") +
+      `</tr>`;
+  });
+  rows +=
+    `<tr style="font-weight:bold; border-top:2px solid var(--navy);"><td style="text-align:left;">Total Cost / Garment</td>` +
+    SIZES.map((s) => `<td class="cost-cell">${currency} ${grandTotal(s).toFixed(2)}</td>`).join("") +
+    `</tr>`;
+  el("costSummaryBody").innerHTML = rows;
+
+  const qty = Number(el("orderQty").value) || 0;
+  el("sumOrderQty").textContent = qty ? qty.toLocaleString() : "-";
+}
+
+// Event delegation: one set of listeners handles every part's table, since
+// tables are re-created whenever a part is toggled or a row added/removed.
+
+el("partsContainer").addEventListener("input", (e) => {
+  const t = e.target;
+  const field = t.dataset.field;
+  if (!field || field === "category") return;
+  const row = parts[t.dataset.part].components[Number(t.dataset.idx)];
+  if (field === "sizeConsumption") {
+    row.sizeConsumption[t.dataset.size] = Number(t.value) || 0;
+  } else if (["rate", "wastagePct", "consumption"].includes(field)) {
+    row[field] = Number(t.value) || 0;
+  } else {
+    row[field] = t.value;
+  }
+  renderCostSummary();
+});
+
+el("partsContainer").addEventListener("change", (e) => {
+  const t = e.target;
+  if (t.dataset.action === "toggle-part") {
+    const key = t.dataset.part;
+    parts[key].enabled = t.checked;
+    if (parts[key].enabled && parts[key].components.length === 0) {
+      parts[key].components.push(newComponentRow());
+    }
+    renderParts();
+    return;
+  }
+  if (t.dataset.field === "category") {
+    const row = parts[t.dataset.part].components[Number(t.dataset.idx)];
+    const newCategory = t.value;
+    if (newCategory === "Fabric" && row.category !== "Fabric") {
+      const flat = Number(row.consumption) || 0;
+      delete row.consumption;
+      row.sizeConsumption = Object.fromEntries(SIZES.map((s) => [s, flat]));
+    } else if (newCategory !== "Fabric" && row.category === "Fabric") {
+      const flat = Number(row.sizeConsumption?.["38"]) || 0;
+      delete row.sizeConsumption;
+      row.consumption = flat;
+    }
+    row.category = newCategory;
+    renderParts();
+  }
+});
+
+el("partsContainer").addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-action]");
+  if (!btn) return;
+  const partKey = btn.dataset.part;
+  if (btn.dataset.action === "add-row") {
+    parts[partKey].components.push(newComponentRow());
+    renderParts();
+  } else if (btn.dataset.action === "remove") {
+    parts[partKey].components.splice(Number(btn.dataset.idx), 1);
+    renderParts();
+  }
+});
+
+el("orderQty").addEventListener("input", renderCostSummary);
+el("currency").addEventListener("input", renderCostSummary);
+
+// ---- Style list & load/save ----
 
 async function loadStyleList(selectId) {
   const res = await fetch("/api/styles");
@@ -129,11 +246,10 @@ async function openStyle(id) {
   el("season").value = s.season;
   el("orderQty").value = s.orderQty;
   el("currency").value = s.currency;
-  components = s.components.length ? s.components : [newComponentRow()];
+  parts = s.parts;
   el("formTitle").textContent = `Editing: ${s.styleNo} - ${s.styleName}`;
   el("statusText").textContent = `Created ${new Date(s.createdAt).toLocaleString()} · Last updated ${new Date(s.updatedAt).toLocaleString()}`;
-  renderComponents();
-  renderSummary();
+  renderParts();
   resetDesignImageInput(s.designImagePath || null);
   loadStyleList(id);
 }
@@ -146,11 +262,10 @@ function resetForm() {
   el("season").value = "";
   el("orderQty").value = "";
   el("currency").value = "INR";
-  components = [newComponentRow()];
+  parts = defaultParts();
   el("formTitle").textContent = "New Style - Design & Component Sheet";
   el("statusText").textContent = "";
-  renderComponents();
-  renderSummary();
+  renderParts();
   resetDesignImageInput(null);
   loadStyleList(null);
 }
@@ -186,6 +301,15 @@ async function saveStyle() {
     toast("Style No. and Style Name are required", true);
     return;
   }
+
+  const partsToSave = {};
+  for (const key of PART_KEYS) {
+    partsToSave[key] = {
+      enabled: parts[key].enabled,
+      components: parts[key].components.filter((c) => c.description.trim() !== ""),
+    };
+  }
+
   const formData = new FormData();
   formData.append("styleNo", styleNo);
   formData.append("styleName", styleName);
@@ -193,7 +317,7 @@ async function saveStyle() {
   formData.append("season", el("season").value.trim());
   formData.append("orderQty", Number(el("orderQty").value) || 0);
   formData.append("currency", el("currency").value.trim() || "INR");
-  formData.append("components", JSON.stringify(components.filter((c) => c.description.trim() !== "")));
+  formData.append("parts", JSON.stringify(partsToSave));
 
   const fileInput = el("designImageInput");
   if (fileInput.files[0]) {
@@ -221,14 +345,7 @@ async function saveStyle() {
 }
 
 el("newStyleBtn").addEventListener("click", resetForm);
-el("addRowBtn").addEventListener("click", () => {
-  components.push(newComponentRow());
-  renderComponents();
-  renderSummary();
-});
 el("saveBtn").addEventListener("click", saveStyle);
-el("orderQty").addEventListener("input", renderSummary);
-el("currency").addEventListener("input", renderSummary);
 
 el("designImageInput").addEventListener("change", (e) => {
   const file = e.target.files[0];

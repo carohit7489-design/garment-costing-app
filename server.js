@@ -17,6 +17,9 @@ const UPLOADS_DIR = path.join(DATA_DIR, "uploads");
 const SESSION_COOKIE = "owner_session";
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours
 
+const SIZES = ["38", "40", "42", "44", "Plus"];
+const PART_KEYS = ["kurta", "pant", "dupatta"];
+
 fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 app.use("/uploads", express.static(UPLOADS_DIR));
 
@@ -111,20 +114,85 @@ app.get("/", (req, res) => res.redirect("/production.html"));
 
 app.use(express.static(path.join(__dirname, "public")));
 
+// ---- Data model ----
+// Each style has three optional "parts" (kurta / pant / dupatta), each with
+// its own component list. Fabric-category components carry a consumption
+// figure per size (38/40/42/44/Plus, i.e. grading); every other category
+// (Trim/CM/Overhead/Other) carries one flat consumption figure used for
+// every size.
+
+function defaultSizeConsumption() {
+  return Object.fromEntries(SIZES.map((s) => [s, 0]));
+}
+
+function defaultPart() {
+  return { enabled: false, components: [] };
+}
+
+function defaultParts() {
+  return Object.fromEntries(PART_KEYS.map((k) => [k, defaultPart()]));
+}
+
+// Upgrades a component to the current shape without discarding any value
+// already entered (old styles stored one flat "consumption" number even for
+// Fabric rows; that becomes the starting point for every size).
+function migrateComponent(c) {
+  if (c.category === "Fabric") {
+    if (c.sizeConsumption) return c;
+    const v = Number(c.consumption) || 0;
+    const { consumption, ...rest } = c;
+    return { ...rest, sizeConsumption: Object.fromEntries(SIZES.map((s) => [s, v])) };
+  }
+  if (c.sizeConsumption) {
+    const { sizeConsumption, ...rest } = c;
+    return { ...rest, consumption: Number(c.consumption) || 0 };
+  }
+  return c;
+}
+
+// Upgrades a style record read from disk to the current parts/sizes shape.
+// Old records stored a flat top-level "components" array; those become the
+// Kurta part (the single-garment case this app started with).
+function migrateStyle(style) {
+  if (style.parts) {
+    const parts = {};
+    for (const key of PART_KEYS) {
+      const part = style.parts[key] || defaultPart();
+      parts[key] = {
+        enabled: !!part.enabled,
+        components: (part.components || []).map(migrateComponent),
+      };
+    }
+    return { ...style, parts };
+  }
+  const { components, ...rest } = style;
+  const parts = defaultParts();
+  const migratedComponents = (components || []).map(migrateComponent);
+  parts.kurta = { enabled: migratedComponents.length > 0, components: migratedComponents };
+  return { ...rest, parts };
+}
+
 function readStyles() {
   if (!fs.existsSync(DATA_FILE)) return [];
   const raw = fs.readFileSync(DATA_FILE, "utf8").trim();
   if (!raw) return [];
-  return JSON.parse(raw);
+  return JSON.parse(raw).map(migrateStyle);
 }
 
 function writeStyles(styles) {
   fs.writeFileSync(DATA_FILE, JSON.stringify(styles, null, 2), "utf8");
 }
 
+function partComponentCount(style) {
+  return PART_KEYS.reduce((sum, key) => {
+    const part = style.parts[key];
+    return sum + (part.enabled ? part.components.length : 0);
+  }, 0);
+}
+
 // ---- Styles (design + component/costing sheet, created by owner) ----
 // Read access is shared: production needs the component list (description,
-// UOM, estimated consumption) to know what to log actuals against.
+// UOM, estimated consumption per size) to know what to log actuals against.
 // Only creating/editing a style (design + pricing) is owner-gated.
 
 app.get("/api/styles", (req, res) => {
@@ -139,7 +207,7 @@ app.get("/api/styles", (req, res) => {
     currency: s.currency,
     createdAt: s.createdAt,
     updatedAt: s.updatedAt,
-    componentCount: s.components.length,
+    componentCount: partComponentCount(s),
     actualsCount: (s.actuals || []).length,
   }));
   res.json(summary);
@@ -158,6 +226,22 @@ app.get("/api/styles/:id/production-view", (req, res) => {
   const styles = readStyles();
   const style = styles.find((s) => s.id === req.params.id);
   if (!style) return res.status(404).json({ error: "Style not found" });
+
+  const parts = {};
+  for (const key of PART_KEYS) {
+    const part = style.parts[key];
+    parts[key] = {
+      enabled: part.enabled,
+      components: part.components.map((c) => ({
+        category: c.category,
+        description: c.description,
+        uom: c.uom,
+        consumption: c.consumption,
+        sizeConsumption: c.sizeConsumption,
+      })),
+    };
+  }
+
   res.json({
     id: style.id,
     styleNo: style.styleNo,
@@ -165,28 +249,33 @@ app.get("/api/styles/:id/production-view", (req, res) => {
     buyer: style.buyer,
     season: style.season,
     orderQty: style.orderQty,
-    components: style.components.map((c) => ({
-      category: c.category,
-      description: c.description,
-      uom: c.uom,
-      consumption: c.consumption,
-    })),
+    parts,
     designImagePath: style.designImagePath || null,
     actuals: style.actuals || [],
   });
 });
 
-function parseComponents(raw) {
-  if (Array.isArray(raw)) return raw;
+function parseParts(raw) {
+  let parsed = raw;
   if (typeof raw === "string") {
     try {
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed : [];
+      parsed = JSON.parse(raw);
     } catch {
-      return [];
+      parsed = null;
     }
   }
-  return [];
+  if (!parsed || typeof parsed !== "object") return defaultParts();
+
+  const parts = {};
+  for (const key of PART_KEYS) {
+    const part = parsed[key] || defaultPart();
+    const components = Array.isArray(part.components) ? part.components : [];
+    parts[key] = {
+      enabled: !!part.enabled,
+      components: components.map(migrateComponent),
+    };
+  }
+  return parts;
 }
 
 function deleteUploadedFile(designImagePath) {
@@ -210,7 +299,7 @@ app.post("/api/styles", requireOwnerAuth, upload.single("designImage"), (req, re
     season: body.season || "",
     orderQty: Number(body.orderQty) || 0,
     currency: body.currency || "INR",
-    components: parseComponents(body.components),
+    parts: parseParts(body.parts),
     designImagePath: req.file ? `/uploads/${req.file.filename}` : null,
     actuals: [],
     createdAt: now,
@@ -246,7 +335,7 @@ app.put("/api/styles/:id", requireOwnerAuth, upload.single("designImage"), (req,
     season: body.season ?? existing.season,
     orderQty: body.orderQty !== undefined ? Number(body.orderQty) : existing.orderQty,
     currency: body.currency ?? existing.currency,
-    components: body.components !== undefined ? parseComponents(body.components) : existing.components,
+    parts: body.parts !== undefined ? parseParts(body.parts) : existing.parts,
     designImagePath,
     updatedAt: new Date().toISOString(),
   };
@@ -265,6 +354,7 @@ app.post("/api/styles/:id/actuals", (req, res) => {
   const body = req.body;
   const entry = {
     id: crypto.randomUUID(),
+    size: SIZES.includes(body.size) ? body.size : SIZES[0],
     filledBy: body.filledBy || "",
     productionDate: body.productionDate || "",
     actualProducedQty: Number(body.actualProducedQty) || 0,
