@@ -1,9 +1,9 @@
-const SIZES = ["38", "40", "42", "44", "Plus"];
+const SIZES = ["40", "42", "44", "46", "48", "50", "52"];
 const PART_KEYS = ["kurta", "pant", "dupatta"];
 const PART_LABELS = { kurta: "Kurta", pant: "Pant", dupatta: "Dupatta" };
-const CATEGORIES = ["Fabric", "Trim", "CM", "Overhead", "Other"];
 
 let currentStyleId = null; // null = creating a new style
+let colors = [];
 let parts = defaultParts();
 let existingDesignImagePath = null; // design image already saved on the server, if any
 let removeImageRequested = false;
@@ -21,40 +21,124 @@ function escapeAttr(s) {
   return String(s ?? "").replace(/"/g, "&quot;");
 }
 
-function defaultSizeConsumption() {
+function defaultSizeQty() {
   return Object.fromEntries(SIZES.map((s) => [s, 0]));
 }
 
+function defaultColor() {
+  return { name: "", qty: defaultSizeQty() };
+}
+
 function defaultPart() {
-  return { enabled: false, components: [] };
+  return { enabled: false, sellingRate: 0, components: [] };
 }
 
 function defaultParts() {
   return Object.fromEntries(PART_KEYS.map((k) => [k, defaultPart()]));
 }
 
-function newComponentRow(category = "Fabric") {
-  if (category === "Fabric") {
-    return { category, description: "", uom: "Mtr", rate: 0, wastagePct: 0, sizeConsumption: defaultSizeConsumption() };
+function newComponentRow(type = "Fabric") {
+  if (type === "Fabric") {
+    return { type, description: "", uom: "Mtr", rate: 0, sizeConsumption: defaultSizeQty() };
   }
-  return { category, description: "", uom: "Pcs", rate: 0, wastagePct: 0, consumption: 0 };
+  return { type, description: "", uom: "Pcs", rate: 0, consumption: 1, vendor: "", billNo: "", received: false };
 }
 
-function costOfRow(row, size) {
+function costOfRow(row) {
   const rate = Number(row.rate) || 0;
-  const waste = Number(row.wastagePct) || 0;
-  const cons = row.category === "Fabric" ? Number(row.sizeConsumption?.[size]) || 0 : Number(row.consumption) || 0;
-  return cons * rate * (1 + waste / 100);
+  if (row.type === "Fabric") return null; // varies by size, handled separately
+  return (Number(row.consumption) || 0) * rate;
 }
 
-function partSubtotal(partKey, size) {
+function costOfRowAtSize(row, size) {
+  const rate = Number(row.rate) || 0;
+  const cons = row.type === "Fabric" ? Number(row.sizeConsumption?.[size]) || 0 : Number(row.consumption) || 0;
+  return cons * rate;
+}
+
+function partCostAtSize(partKey, size) {
   const part = parts[partKey];
   if (!part.enabled) return 0;
-  return part.components.reduce((sum, r) => sum + costOfRow(r, size), 0);
+  return part.components.reduce((sum, r) => sum + costOfRowAtSize(r, size), 0);
 }
 
-function grandTotal(size) {
-  return PART_KEYS.reduce((sum, k) => sum + partSubtotal(k, size), 0);
+function grandCostAtSize(size) {
+  return PART_KEYS.reduce((sum, k) => sum + partCostAtSize(k, size), 0);
+}
+
+function totalSellingRate() {
+  return PART_KEYS.reduce((sum, k) => sum + (parts[k].enabled ? Number(parts[k].sellingRate) || 0 : 0), 0);
+}
+
+// ---- Order Quantity by Color & Size ----
+
+function renderColorSizeTable() {
+  el("colorSizeHead").innerHTML =
+    `<th style="text-align:left;">Color</th>` + SIZES.map((s) => `<th>${s}</th>`).join("") + `<th>Total</th><th></th>`;
+
+  el("colorSizeBody").innerHTML = colors
+    .map((c, idx) => {
+      const sizeCells = SIZES.map(
+        (s) => `<td><input data-idx="${idx}" data-size="${s}" type="number" min="0" step="1" value="${c.qty[s]}" style="max-width:70px;" /></td>`
+      ).join("");
+      const rowTotal = SIZES.reduce((sum, s) => sum + (Number(c.qty[s]) || 0), 0);
+      return `
+        <tr>
+          <td><input data-idx="${idx}" data-field="name" value="${escapeAttr(c.name)}" placeholder="e.g. Blue" style="max-width:120px;" /></td>
+          ${sizeCells}
+          <td class="cost-cell" data-row-total="${idx}">${rowTotal}</td>
+          <td><button class="btn-small" type="button" data-action="remove-color" data-idx="${idx}">✕</button></td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  const sizeTotals = SIZES.map((s) => colors.reduce((sum, c) => sum + (Number(c.qty[s]) || 0), 0));
+  const grandTotal = sizeTotals.reduce((a, b) => a + b, 0);
+  el("colorSizeFoot").innerHTML =
+    `<td style="text-align:left; font-weight:bold;">Total</td>` +
+    sizeTotals.map((t) => `<td class="cost-cell">${t}</td>`).join("") +
+    `<td class="cost-cell" id="colorSizeGrandTotal">${grandTotal}</td><td></td>`;
+
+  renderCostSummary();
+}
+
+el("colorSizeBody").addEventListener("input", (e) => {
+  const t = e.target;
+  const idx = Number(t.dataset.idx);
+  if (t.dataset.field === "name") {
+    colors[idx].name = t.value;
+    return;
+  }
+  if (t.dataset.size) {
+    colors[idx].qty[t.dataset.size] = Number(t.value) || 0;
+    const rowTotal = SIZES.reduce((sum, s) => sum + (Number(colors[idx].qty[s]) || 0), 0);
+    const cell = document.querySelector(`[data-row-total="${idx}"]`);
+    if (cell) cell.textContent = rowTotal;
+    const sizeTotals = SIZES.map((s) => colors.reduce((sum, c) => sum + (Number(c.qty[s]) || 0), 0));
+    document.querySelectorAll("#colorSizeFoot td.cost-cell").forEach((cell, i) => {
+      if (i < sizeTotals.length) cell.textContent = sizeTotals[i];
+    });
+    const grandTotal = sizeTotals.reduce((a, b) => a + b, 0);
+    el("colorSizeGrandTotal").textContent = grandTotal;
+    renderCostSummary();
+  }
+});
+
+el("colorSizeBody").addEventListener("click", (e) => {
+  const btn = e.target.closest('button[data-action="remove-color"]');
+  if (!btn) return;
+  colors.splice(Number(btn.dataset.idx), 1);
+  renderColorSizeTable();
+});
+
+el("addColorBtn").addEventListener("click", () => {
+  colors.push(defaultColor());
+  renderColorSizeTable();
+});
+
+function totalPcs() {
+  return colors.reduce((sum, c) => sum + SIZES.reduce((s2, sz) => s2 + (Number(c.qty[sz]) || 0), 0), 0);
 }
 
 // ---- Rendering: parts & components ----
@@ -67,6 +151,9 @@ function renderParts() {
       <div class="part-block">
         <div class="part-header">
           <label><input type="checkbox" data-action="toggle-part" data-part="${key}" ${part.enabled ? "checked" : ""}/> Include ${PART_LABELS[key]}</label>
+          ${part.enabled ? `<span style="font-size:12px; color:var(--muted);">Selling Rate/Garment
+            <input data-action="selling-rate" data-part="${key}" type="number" step="0.01" min="0" value="${part.sellingRate}" style="width:90px; margin-left:6px;" />
+          </span>` : ""}
         </div>
         ${part.enabled ? renderPartTable(key) : ""}
       </div>
@@ -81,45 +168,60 @@ function renderPartTable(partKey) {
     <table class="comp-table">
       <thead>
         <tr>
-          <th style="width:100px;">Category</th>
-          <th>Component / Material Description</th>
+          <th style="width:90px;">Type</th>
+          <th>Description</th>
           <th style="width:70px;">UOM</th>
-          <th style="width:90px;">Rate/Unit</th>
-          <th style="width:80px;">Wastage %</th>
-          <th style="width:300px;">Consumption per Garment (by size)</th>
+          <th style="width:80px;">Rate</th>
+          <th style="width:290px;">Consumption (Average)</th>
+          <th style="width:110px;">Vendor</th>
+          <th style="width:100px;">Bill No.</th>
+          <th style="width:60px;">Received</th>
           <th style="width:36px;"></th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
     </table>
-    <button class="btn-secondary" type="button" data-action="add-row" data-part="${partKey}">+ Add Component</button>
+    <button class="btn-secondary" type="button" data-action="add-row" data-part="${partKey}">+ Add Row</button>
   `;
 }
 
 function renderComponentRow(partKey, row, idx) {
-  const consumptionCell =
-    row.category === "Fabric"
-      ? `<div class="size-inputs">${SIZES.map(
-          (sz) => `
-            <div class="size-input-group">
-              <span>${sz}</span>
-              <input data-part="${partKey}" data-idx="${idx}" data-field="sizeConsumption" data-size="${sz}" type="number" step="0.01" min="0" value="${row.sizeConsumption[sz]}" />
-            </div>`
-        ).join("")}</div>`
-      : `<input data-part="${partKey}" data-idx="${idx}" data-field="consumption" type="number" step="0.01" min="0" value="${row.consumption}" style="max-width:110px;" />`;
+  const isFabric = row.type === "Fabric";
+  const consumptionCell = isFabric
+    ? `<div class="size-inputs">${SIZES.map(
+        (sz) => `
+          <div class="size-input-group">
+            <span>${sz}</span>
+            <input data-part="${partKey}" data-idx="${idx}" data-field="sizeConsumption" data-size="${sz}" type="number" step="0.01" min="0" value="${row.sizeConsumption[sz]}" />
+          </div>`
+      ).join("")}</div>`
+    : `<input data-part="${partKey}" data-idx="${idx}" data-field="consumption" type="number" step="0.01" min="0" value="${row.consumption}" style="max-width:90px;" />`;
+
+  const vendorCell = isFabric
+    ? `<span style="color:var(--muted); font-size:12px;">-</span>`
+    : `<input data-part="${partKey}" data-idx="${idx}" data-field="vendor" value="${escapeAttr(row.vendor)}" placeholder="Vendor" style="max-width:110px;" />`;
+  const billCell = isFabric
+    ? `<span style="color:var(--muted); font-size:12px;">-</span>`
+    : `<input data-part="${partKey}" data-idx="${idx}" data-field="billNo" value="${escapeAttr(row.billNo)}" placeholder="Bill No." style="max-width:100px;" />`;
+  const receivedCell = isFabric
+    ? `<span style="color:var(--muted); font-size:12px;">-</span>`
+    : `<input data-part="${partKey}" data-idx="${idx}" data-field="received" type="checkbox" ${row.received ? "checked" : ""} />`;
 
   return `
     <tr>
       <td>
-        <select data-part="${partKey}" data-idx="${idx}" data-field="category">
-          ${CATEGORIES.map((c) => `<option value="${c}" ${c === row.category ? "selected" : ""}>${c}</option>`).join("")}
+        <select data-part="${partKey}" data-idx="${idx}" data-field="type">
+          <option value="Fabric" ${isFabric ? "selected" : ""}>Fabric</option>
+          <option value="Process" ${!isFabric ? "selected" : ""}>Process</option>
         </select>
       </td>
-      <td><input data-part="${partKey}" data-idx="${idx}" data-field="description" value="${escapeAttr(row.description)}" placeholder="e.g. Self Fabric - Rayon" /></td>
+      <td><input data-part="${partKey}" data-idx="${idx}" data-field="description" value="${escapeAttr(row.description)}" placeholder="e.g. Self Fabric / Cutting / Embroidery" /></td>
       <td><input data-part="${partKey}" data-idx="${idx}" data-field="uom" value="${escapeAttr(row.uom)}" placeholder="Mtr/Pcs" /></td>
       <td><input data-part="${partKey}" data-idx="${idx}" data-field="rate" type="number" step="0.01" min="0" value="${row.rate}" /></td>
-      <td><input data-part="${partKey}" data-idx="${idx}" data-field="wastagePct" type="number" step="0.1" min="0" value="${row.wastagePct}" /></td>
       <td>${consumptionCell}</td>
+      <td>${vendorCell}</td>
+      <td>${billCell}</td>
+      <td style="text-align:center;">${receivedCell}</td>
       <td><button class="btn-small" type="button" data-action="remove" data-part="${partKey}" data-idx="${idx}">✕</button></td>
     </tr>
   `;
@@ -135,17 +237,34 @@ function renderCostSummary() {
     if (!parts[key].enabled) return;
     rows +=
       `<tr><td style="text-align:left;">${PART_LABELS[key]}</td>` +
-      SIZES.map((s) => `<td class="cost-cell">${partSubtotal(key, s).toFixed(2)}</td>`).join("") +
+      SIZES.map((s) => `<td class="cost-cell">${partCostAtSize(key, s).toFixed(2)}</td>`).join("") +
       `</tr>`;
   });
   rows +=
     `<tr style="font-weight:bold; border-top:2px solid var(--navy);"><td style="text-align:left;">Total Cost / Garment</td>` +
-    SIZES.map((s) => `<td class="cost-cell">${currency} ${grandTotal(s).toFixed(2)}</td>`).join("") +
+    SIZES.map((s) => `<td class="cost-cell">${currency} ${grandCostAtSize(s).toFixed(2)}</td>`).join("") +
+    `</tr>`;
+  const selling = totalSellingRate();
+  rows +=
+    `<tr><td style="text-align:left;">Selling Rate / Garment</td>` +
+    SIZES.map(() => `<td class="cost-cell">${currency} ${selling.toFixed(2)}</td>`).join("") +
+    `</tr>`;
+  rows +=
+    `<tr><td style="text-align:left;">Margin / Garment</td>` +
+    SIZES.map((s) => `<td class="cost-cell">${currency} ${(selling - grandCostAtSize(s)).toFixed(2)}</td>`).join("") +
     `</tr>`;
   el("costSummaryBody").innerHTML = rows;
 
-  const qty = Number(el("orderQty").value) || 0;
+  const qty = totalPcs();
   el("sumOrderQty").textContent = qty ? qty.toLocaleString() : "-";
+
+  // Size-weighted totals across the whole order (cost/value vary by size, qty varies by color+size)
+  const sizeTotals = Object.fromEntries(SIZES.map((s) => [s, colors.reduce((sum, c) => sum + (Number(c.qty[s]) || 0), 0)]));
+  const totalCostValue = SIZES.reduce((sum, s) => sum + grandCostAtSize(s) * sizeTotals[s], 0);
+  const totalSellingValue = selling * qty;
+  el("sumCostValue").textContent = qty ? `${currency} ${totalCostValue.toFixed(2)}` : "-";
+  el("sumSellingValue").textContent = qty ? `${currency} ${totalSellingValue.toFixed(2)}` : "-";
+  el("sumMargin").textContent = qty ? `${currency} ${(totalSellingValue - totalCostValue).toFixed(2)}` : "-";
 }
 
 // Event delegation: one set of listeners handles every part's table, since
@@ -153,13 +272,20 @@ function renderCostSummary() {
 
 el("partsContainer").addEventListener("input", (e) => {
   const t = e.target;
+  if (t.dataset.action === "selling-rate") {
+    parts[t.dataset.part].sellingRate = Number(t.value) || 0;
+    renderCostSummary();
+    return;
+  }
   const field = t.dataset.field;
-  if (!field || field === "category") return;
+  if (!field || field === "type") return;
   const row = parts[t.dataset.part].components[Number(t.dataset.idx)];
   if (field === "sizeConsumption") {
     row.sizeConsumption[t.dataset.size] = Number(t.value) || 0;
-  } else if (["rate", "wastagePct", "consumption"].includes(field)) {
+  } else if (field === "consumption" || field === "rate") {
     row[field] = Number(t.value) || 0;
+  } else if (field === "received") {
+    row.received = t.checked;
   } else {
     row[field] = t.value;
   }
@@ -177,19 +303,15 @@ el("partsContainer").addEventListener("change", (e) => {
     renderParts();
     return;
   }
-  if (t.dataset.field === "category") {
+  if (t.dataset.field === "type") {
     const row = parts[t.dataset.part].components[Number(t.dataset.idx)];
-    const newCategory = t.value;
-    if (newCategory === "Fabric" && row.category !== "Fabric") {
-      const flat = Number(row.consumption) || 0;
-      delete row.consumption;
-      row.sizeConsumption = Object.fromEntries(SIZES.map((s) => [s, flat]));
-    } else if (newCategory !== "Fabric" && row.category === "Fabric") {
-      const flat = Number(row.sizeConsumption?.["38"]) || 0;
-      delete row.sizeConsumption;
-      row.consumption = flat;
-    }
-    row.category = newCategory;
+    const newType = t.value;
+    if (newType === row.type) return;
+    const replacement = newComponentRow(newType);
+    replacement.description = row.description;
+    replacement.uom = row.uom;
+    replacement.rate = row.rate;
+    parts[t.dataset.part].components[Number(t.dataset.idx)] = replacement;
     renderParts();
   }
 });
@@ -207,7 +329,6 @@ el("partsContainer").addEventListener("click", (e) => {
   }
 });
 
-el("orderQty").addEventListener("input", renderCostSummary);
 el("currency").addEventListener("input", renderCostSummary);
 
 // ---- Style list & load/save ----
@@ -228,7 +349,7 @@ async function loadStyleList(selectId) {
       li.className = s.id === selectId ? "active" : "";
       li.innerHTML = `
         <div class="sname">${escapeAttr(s.styleNo)} - ${escapeAttr(s.styleName)}</div>
-        <div class="smeta">${escapeAttr(s.buyer || "-")} · MOQ ${s.orderQty} · ${s.componentCount} components · ${s.actualsCount} production entries</div>
+        <div class="smeta">${escapeAttr(s.buyer || "-")} · ${escapeAttr(s.orderType)} · ${s.totalPcs} pcs · ${s.componentCount} rows · ${s.actualsCount} production entries</div>
       `;
       li.addEventListener("click", () => openStyle(s.id));
       list.appendChild(li);
@@ -244,11 +365,15 @@ async function openStyle(id) {
   el("styleName").value = s.styleName;
   el("buyer").value = s.buyer;
   el("season").value = s.season;
-  el("orderQty").value = s.orderQty;
   el("currency").value = s.currency;
+  el("orderType").value = s.orderType || "Bulk";
+  el("pocket").value = s.pocket || "";
+  el("patti").value = s.patti || "";
+  colors = s.colors && s.colors.length ? s.colors : [];
   parts = s.parts;
   el("formTitle").textContent = `Editing: ${s.styleNo} - ${s.styleName}`;
   el("statusText").textContent = `Created ${new Date(s.createdAt).toLocaleString()} · Last updated ${new Date(s.updatedAt).toLocaleString()}`;
+  renderColorSizeTable();
   renderParts();
   resetDesignImageInput(s.designImagePath || null);
   loadStyleList(id);
@@ -260,11 +385,15 @@ function resetForm() {
   el("styleName").value = "";
   el("buyer").value = "";
   el("season").value = "";
-  el("orderQty").value = "";
   el("currency").value = "INR";
+  el("orderType").value = "Bulk";
+  el("pocket").value = "";
+  el("patti").value = "";
+  colors = [];
   parts = defaultParts();
   el("formTitle").textContent = "New Style - Design & Component Sheet";
   el("statusText").textContent = "";
+  renderColorSizeTable();
   renderParts();
   resetDesignImageInput(null);
   loadStyleList(null);
@@ -306,17 +435,22 @@ async function saveStyle() {
   for (const key of PART_KEYS) {
     partsToSave[key] = {
       enabled: parts[key].enabled,
+      sellingRate: parts[key].sellingRate,
       components: parts[key].components.filter((c) => c.description.trim() !== ""),
     };
   }
+  const colorsToSave = colors.filter((c) => c.name.trim() !== "");
 
   const formData = new FormData();
   formData.append("styleNo", styleNo);
   formData.append("styleName", styleName);
   formData.append("buyer", el("buyer").value.trim());
   formData.append("season", el("season").value.trim());
-  formData.append("orderQty", Number(el("orderQty").value) || 0);
   formData.append("currency", el("currency").value.trim() || "INR");
+  formData.append("orderType", el("orderType").value);
+  formData.append("pocket", el("pocket").value.trim());
+  formData.append("patti", el("patti").value.trim());
+  formData.append("colors", JSON.stringify(colorsToSave));
   formData.append("parts", JSON.stringify(partsToSave));
 
   const fileInput = el("designImageInput");

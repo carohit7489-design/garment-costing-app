@@ -1,10 +1,11 @@
-const SIZES = ["38", "40", "42", "44", "Plus"];
+const SIZES = ["40", "42", "44", "46", "48", "50", "52"];
 const PART_KEYS = ["kurta", "pant", "dupatta"];
 const PART_LABELS = { kurta: "Kurta", pant: "Pant", dupatta: "Dupatta" };
 
 let currentStyle = null;
 let selectedSize = SIZES[0];
-let actualData = {}; // { kurta: [{category,description,uom,estConsumption,actualConsumption}], pant:[...], dupatta:[...] }
+let selectedColor = "";
+let actualData = {}; // { kurta: [{type,description,uom,estConsumption,actualConsumption}], pant:[...], dupatta:[...] }
 
 const el = (id) => document.getElementById(id);
 
@@ -37,7 +38,7 @@ async function loadStyleList(selectId) {
       li.className = s.id === selectId ? "active" : "";
       li.innerHTML = `
         <div class="sname">${escapeAttr(s.styleNo)} - ${escapeAttr(s.styleName)}</div>
-        <div class="smeta">${escapeAttr(s.buyer || "-")} · MOQ ${s.orderQty} · ${s.componentCount} components · ${s.actualsCount} production entries</div>
+        <div class="smeta">${escapeAttr(s.buyer || "-")} · ${escapeAttr(s.orderType)} · ${s.totalPcs} pcs · ${s.componentCount} rows · ${s.actualsCount} production entries</div>
       `;
       li.addEventListener("click", () => openStyle(s.id));
       list.appendChild(li);
@@ -45,7 +46,7 @@ async function loadStyleList(selectId) {
 }
 
 function estConsumptionFor(component, size) {
-  return component.category === "Fabric"
+  return component.type === "Fabric"
     ? Number(component.sizeConsumption?.[size]) || 0
     : Number(component.consumption) || 0;
 }
@@ -57,7 +58,7 @@ function buildActualLines() {
     actualData[key] = !part.enabled
       ? []
       : part.components.map((c) => ({
-          category: c.category,
+          type: c.type,
           description: c.description,
           uom: c.uom,
           estConsumption: estConsumptionFor(c, selectedSize),
@@ -77,7 +78,15 @@ async function openStyle(id) {
   el("formTitle").textContent = `${s.styleNo} - ${s.styleName}`;
   el("infoBuyer").textContent = s.buyer || "-";
   el("infoSeason").textContent = s.season || "-";
-  el("infoMoq").textContent = s.orderQty ? s.orderQty.toLocaleString() : "-";
+  el("infoOrderType").textContent = s.orderType || "-";
+  const totalQty = (s.colors || []).reduce((sum, c) => sum + SIZES.reduce((s2, sz) => s2 + (Number(c.qty[sz]) || 0), 0), 0);
+  el("infoTotalQty").textContent = totalQty ? totalQty.toLocaleString() : "-";
+
+  const colorNames = (s.colors || []).map((c) => c.name).filter(Boolean);
+  el("colorSelect").innerHTML = colorNames.length
+    ? colorNames.map((c) => `<option value="${escapeAttr(c)}">${escapeAttr(c)}</option>`).join("")
+    : `<option value="">-</option>`;
+  selectedColor = colorNames[0] || "";
 
   const img = el("designPreview");
   const empty = el("designPreviewEmpty");
@@ -129,7 +138,7 @@ function renderPartActualTable(partKey) {
       const color = variance > 0 ? "#c0392b" : variance < 0 ? "#1a7a3c" : "#64748b";
       return `
         <tr>
-          <td>${escapeAttr(row.category)}</td>
+          <td>${escapeAttr(row.type)}</td>
           <td>${escapeAttr(row.description)}</td>
           <td>${escapeAttr(row.uom)}</td>
           <td>${row.estConsumption}</td>
@@ -143,8 +152,8 @@ function renderPartActualTable(partKey) {
     <table class="comp-table">
       <thead>
         <tr>
-          <th style="width:100px;">Category</th>
-          <th>Component / Material</th>
+          <th style="width:100px;">Type</th>
+          <th>Description</th>
           <th style="width:70px;">UOM</th>
           <th style="width:110px;">Est. Consumption</th>
           <th style="width:140px;">Actual Consumption</th>
@@ -181,6 +190,10 @@ el("sizeSelect").addEventListener("change", (e) => {
   }
 });
 
+el("colorSelect").addEventListener("change", (e) => {
+  selectedColor = e.target.value;
+});
+
 function renderHistory() {
   const container = el("historyList");
   const entries = currentStyle.actuals || [];
@@ -195,7 +208,7 @@ function renderHistory() {
       const linesHtml = e.lines
         .map((l) => `${escapeAttr(l.part ? PART_LABELS[l.part] + " - " : "")}${escapeAttr(l.description)}: ${l.actualConsumption} ${escapeAttr(l.uom)} (est. ${l.estConsumption})`)
         .join(" · ");
-      return `<div class="hist-item"><strong>${e.productionDate || "-"}</strong> · Size ${escapeAttr(e.size || "-")} · Produced ${e.actualProducedQty} pcs · Filled by ${escapeAttr(e.filledBy || "-")}<br/>${linesHtml}</div>`;
+      return `<div class="hist-item"><strong>${e.productionDate || "-"}</strong> · ${escapeAttr(e.color || "-")} / Size ${escapeAttr(e.size || "-")} · Produced ${e.actualProducedQty} pcs · Filled by ${escapeAttr(e.filledBy || "-")}<br/>${linesHtml}</div>`;
     })
     .join("");
 }
@@ -207,7 +220,7 @@ async function saveActuals() {
     actualData[key].forEach((l) => {
       allLines.push({
         part: key,
-        category: l.category,
+        type: l.type,
         description: l.description,
         uom: l.uom,
         estConsumption: l.estConsumption,
@@ -222,6 +235,7 @@ async function saveActuals() {
   }
 
   const payload = {
+    color: selectedColor,
     size: selectedSize,
     filledBy: el("filledBy").value.trim(),
     productionDate: el("prodDate").value,

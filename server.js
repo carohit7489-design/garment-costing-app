@@ -17,7 +17,7 @@ const UPLOADS_DIR = path.join(DATA_DIR, "uploads");
 const SESSION_COOKIE = "owner_session";
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours
 
-const SIZES = ["38", "40", "42", "44", "Plus"];
+const SIZES = ["40", "42", "44", "46", "48", "50", "52"];
 const PART_KEYS = ["kurta", "pant", "dupatta"];
 
 fs.mkdirSync(UPLOADS_DIR, { recursive: true });
@@ -115,61 +115,108 @@ app.get("/", (req, res) => res.redirect("/production.html"));
 app.use(express.static(path.join(__dirname, "public")));
 
 // ---- Data model ----
-// Each style has three optional "parts" (kurta / pant / dupatta), each with
-// its own component list. Fabric-category components carry a consumption
-// figure per size (38/40/42/44/Plus, i.e. grading); every other category
-// (Trim/CM/Overhead/Other) carries one flat consumption figure used for
-// every size.
+// Each style has three optional "parts" (kurta / pant / dupatta). Each part
+// has its own list of rows, of two types:
+//   - "Fabric" rows carry a consumption figure per size (grading).
+//   - "Process" rows (Cutting, Stitching, Embroidery, job-work, etc.) carry
+//     one flat consumption ("Average") used for every size, plus vendor/
+//     bill/received tracking, matching how the client's own sheet works.
+// Order quantity is a color x size grid rather than a single number.
 
-function defaultSizeConsumption() {
+function defaultSizeQty() {
   return Object.fromEntries(SIZES.map((s) => [s, 0]));
 }
 
+function defaultColor() {
+  return { name: "", qty: defaultSizeQty() };
+}
+
 function defaultPart() {
-  return { enabled: false, components: [] };
+  return { enabled: false, sellingRate: 0, components: [] };
 }
 
 function defaultParts() {
   return Object.fromEntries(PART_KEYS.map((k) => [k, defaultPart()]));
 }
 
-// Upgrades a component to the current shape without discarding any value
-// already entered (old styles stored one flat "consumption" number even for
-// Fabric rows; that becomes the starting point for every size).
-function migrateComponent(c) {
-  if (c.category === "Fabric") {
-    if (c.sizeConsumption) return c;
-    const v = Number(c.consumption) || 0;
-    const { consumption, ...rest } = c;
-    return { ...rest, sizeConsumption: Object.fromEntries(SIZES.map((s) => [s, v])) };
-  }
-  if (c.sizeConsumption) {
-    const { sizeConsumption, ...rest } = c;
-    return { ...rest, consumption: Number(c.consumption) || 0 };
-  }
-  return c;
+function styleTotalPcs(style) {
+  return (style.colors || []).reduce((sum, c) => sum + SIZES.reduce((s2, sz) => s2 + (Number(c.qty[sz]) || 0), 0), 0);
 }
 
-// Upgrades a style record read from disk to the current parts/sizes shape.
-// Old records stored a flat top-level "components" array; those become the
-// Kurta part (the single-garment case this app started with).
+// Upgrades a component to the current Fabric/Process shape without
+// discarding any value already entered.
+function migrateComponent(c) {
+  if (c.type === "Fabric" || c.type === "Process") return c;
+
+  // Pre-parts-rewrite shape used category: "Fabric"/"Trim"/"CM"/"Overhead"/"Other".
+  if (c.category === "Fabric") {
+    let sizeConsumption;
+    if (c.sizeConsumption) {
+      // Old size set was 38/40/42/44/Plus; carry a representative flat value
+      // across the new 7-size set rather than guess a distribution.
+      const values = Object.values(c.sizeConsumption).map(Number).filter((v) => !isNaN(v) && v > 0);
+      const v = values[0] || 0;
+      sizeConsumption = Object.fromEntries(SIZES.map((s) => [s, v]));
+    } else {
+      const v = Number(c.consumption) || 0;
+      sizeConsumption = Object.fromEntries(SIZES.map((s) => [s, v]));
+    }
+    return { type: "Fabric", description: c.description || "", uom: c.uom || "Mtr", rate: Number(c.rate) || 0, sizeConsumption };
+  }
+  return {
+    type: "Process",
+    description: c.description || "",
+    uom: c.uom || "Pcs",
+    rate: Number(c.rate) || 0,
+    consumption: Number(c.consumption) || 1,
+    vendor: c.vendor || "",
+    billNo: c.billNo || "",
+    received: !!c.received,
+  };
+}
+
+// Upgrades a style record read from disk to the current shape.
 function migrateStyle(style) {
+  const isCurrent = Array.isArray(style.colors) && style.parts && style.parts.kurta && "sellingRate" in style.parts.kurta;
+
+  let parts;
   if (style.parts) {
-    const parts = {};
+    parts = {};
     for (const key of PART_KEYS) {
       const part = style.parts[key] || defaultPart();
       parts[key] = {
         enabled: !!part.enabled,
+        sellingRate: Number(part.sellingRate) || 0,
         components: (part.components || []).map(migrateComponent),
       };
     }
-    return { ...style, parts };
+  } else {
+    parts = defaultParts();
   }
-  const { components, ...rest } = style;
-  const parts = defaultParts();
-  const migratedComponents = (components || []).map(migrateComponent);
-  parts.kurta = { enabled: migratedComponents.length > 0, components: migratedComponents };
-  return { ...rest, parts };
+
+  let colors = style.colors;
+  if (!Array.isArray(colors)) {
+    // Pre-color-grid styles stored a single flat orderQty number; preserve
+    // the total under one placeholder color so nothing is lost, and flag it
+    // for the owner to redistribute across actual colors/sizes.
+    const legacyQty = Number(style.orderQty) || 0;
+    const color = defaultColor();
+    if (legacyQty > 0) {
+      color.name = "Unspecified (migrated)";
+      color.qty[SIZES[0]] = legacyQty;
+    }
+    colors = legacyQty > 0 ? [color] : [];
+  }
+
+  const { orderQty, ...rest } = style;
+  return {
+    ...rest,
+    orderType: style.orderType || "Bulk",
+    pocket: style.pocket || "",
+    patti: style.patti || "",
+    colors,
+    parts,
+  };
 }
 
 function readStyles() {
@@ -203,7 +250,8 @@ app.get("/api/styles", (req, res) => {
     styleName: s.styleName,
     buyer: s.buyer,
     season: s.season,
-    orderQty: s.orderQty,
+    orderType: s.orderType,
+    totalPcs: styleTotalPcs(s),
     currency: s.currency,
     createdAt: s.createdAt,
     updatedAt: s.updatedAt,
@@ -220,8 +268,9 @@ app.get("/api/styles/:id", (req, res) => {
   res.json(style);
 });
 
-// Production-facing view of a style: component list without rate/pricing,
-// so the production page never receives cost data even via direct API call.
+// Production-facing view of a style: component list without rate/vendor/bill
+// pricing info, so the production page never receives cost data even via a
+// direct API call.
 app.get("/api/styles/:id/production-view", (req, res) => {
   const styles = readStyles();
   const style = styles.find((s) => s.id === req.params.id);
@@ -233,7 +282,7 @@ app.get("/api/styles/:id/production-view", (req, res) => {
     parts[key] = {
       enabled: part.enabled,
       components: part.components.map((c) => ({
-        category: c.category,
+        type: c.type,
         description: c.description,
         uom: c.uom,
         consumption: c.consumption,
@@ -248,7 +297,8 @@ app.get("/api/styles/:id/production-view", (req, res) => {
     styleName: style.styleName,
     buyer: style.buyer,
     season: style.season,
-    orderQty: style.orderQty,
+    orderType: style.orderType,
+    colors: style.colors,
     parts,
     designImagePath: style.designImagePath || null,
     actuals: style.actuals || [],
@@ -272,10 +322,29 @@ function parseParts(raw) {
     const components = Array.isArray(part.components) ? part.components : [];
     parts[key] = {
       enabled: !!part.enabled,
+      sellingRate: Number(part.sellingRate) || 0,
       components: components.map(migrateComponent),
     };
   }
   return parts;
+}
+
+function parseColors(raw) {
+  let parsed = raw;
+  if (typeof raw === "string") {
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      parsed = null;
+    }
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed
+    .filter((c) => c && String(c.name || "").trim() !== "")
+    .map((c) => ({
+      name: c.name,
+      qty: Object.fromEntries(SIZES.map((s) => [s, Number(c.qty?.[s]) || 0])),
+    }));
 }
 
 function deleteUploadedFile(designImagePath) {
@@ -297,8 +366,11 @@ app.post("/api/styles", requireOwnerAuth, upload.single("designImage"), (req, re
     styleName: body.styleName,
     buyer: body.buyer || "",
     season: body.season || "",
-    orderQty: Number(body.orderQty) || 0,
+    orderType: body.orderType === "Sample" ? "Sample" : "Bulk",
+    pocket: body.pocket || "",
+    patti: body.patti || "",
     currency: body.currency || "INR",
+    colors: parseColors(body.colors),
     parts: parseParts(body.parts),
     designImagePath: req.file ? `/uploads/${req.file.filename}` : null,
     actuals: [],
@@ -333,8 +405,11 @@ app.put("/api/styles/:id", requireOwnerAuth, upload.single("designImage"), (req,
     styleName: body.styleName ?? existing.styleName,
     buyer: body.buyer ?? existing.buyer,
     season: body.season ?? existing.season,
-    orderQty: body.orderQty !== undefined ? Number(body.orderQty) : existing.orderQty,
+    orderType: body.orderType !== undefined ? (body.orderType === "Sample" ? "Sample" : "Bulk") : existing.orderType,
+    pocket: body.pocket ?? existing.pocket,
+    patti: body.patti ?? existing.patti,
     currency: body.currency ?? existing.currency,
+    colors: body.colors !== undefined ? parseColors(body.colors) : existing.colors,
     parts: body.parts !== undefined ? parseParts(body.parts) : existing.parts,
     designImagePath,
     updatedAt: new Date().toISOString(),
@@ -354,6 +429,7 @@ app.post("/api/styles/:id/actuals", (req, res) => {
   const body = req.body;
   const entry = {
     id: crypto.randomUUID(),
+    color: body.color || "",
     size: SIZES.includes(body.size) ? body.size : SIZES[0],
     filledBy: body.filledBy || "",
     productionDate: body.productionDate || "",

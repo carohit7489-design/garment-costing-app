@@ -54,12 +54,23 @@
         <input id="season" placeholder="e.g. SS26" />
       </div>
       <div class="field">
-        <label>Minimum Order Qty (pcs)</label>
-        <input id="orderQty" type="number" min="0" placeholder="e.g. 500" />
-      </div>
-      <div class="field">
         <label>Currency</label>
         <input id="currency" value="INR" />
+      </div>
+      <div class="field">
+        <label>Order Type</label>
+        <select id="orderType">
+          <option value="Sample">Sample</option>
+          <option value="Bulk" selected>Bulk</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Pocket</label>
+        <input id="pocket" placeholder="e.g. Yes / No / Side Pocket" />
+      </div>
+      <div class="field">
+        <label>Patti</label>
+        <input id="patti" placeholder="e.g. Piping type" />
       </div>
     </div>
 
@@ -77,6 +88,16 @@
       </div>
     </div>
 
+    <section class="panel" style="margin-top:16px;">
+      <h2>Order Quantity by Color &amp; Size</h2>
+      <table class="comp-table" id="colorSizeTable">
+        <thead><tr id="colorSizeHead"></tr></thead>
+        <tbody id="colorSizeBody"></tbody>
+        <tfoot><tr id="colorSizeFoot"></tr></tfoot>
+      </table>
+      <button class="btn-secondary" type="button" id="addColorBtn">+ Add Color</button>
+    </section>
+
     <div id="partsContainer"></div>
 
     <section class="panel" style="margin-top:16px;">
@@ -86,7 +107,10 @@
         <tbody id="costSummaryBody"></tbody>
       </table>
       <div class="summary-bar" style="margin-top:12px;">
-        <div>Minimum Order Qty<strong id="sumOrderQty">-</strong></div>
+        <div>Total Order Qty (all colors/sizes)<strong id="sumOrderQty">-</strong></div>
+        <div>Total Selling Value<strong id="sumSellingValue">-</strong></div>
+        <div>Total Cost Value<strong id="sumCostValue">-</strong></div>
+        <div>Total Margin<strong id="sumMargin">-</strong></div>
       </div>
     </section>
 
