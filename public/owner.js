@@ -1,7 +1,11 @@
 const SIZES = ["40", "42", "44", "46", "48", "50", "52"];
 const PART_KEYS = ["kurta", "pant", "dupatta"];
 const PART_LABELS = { kurta: "Kurta", pant: "Pant", dupatta: "Dupatta" };
-const PROCESS_TYPES = [
+// Fixed line items every part offers (matching the client's own process
+// list). Row order is always Fabric, then each name below, then Other -
+// the owner fills in rate/consumption for whichever apply and leaves the
+// rest at 0, rather than adding rows by hand.
+const FIXED_PROCESS_NAMES = [
   "Cutting",
   "Stitching",
   "Finishing",
@@ -12,7 +16,6 @@ const PROCESS_TYPES = [
   "Adda Work",
   "Tussel",
   "MOH + Material",
-  "Other",
 ];
 
 let currentStyleId = null; // null = creating a new style
@@ -42,19 +45,24 @@ function defaultColor() {
   return { name: "", qty: defaultSizeQty() };
 }
 
+function defaultFabricRow() {
+  return { type: "Fabric", description: "Fabric", uom: "Mtr", rate: 0, sizeConsumption: defaultSizeQty() };
+}
+
+function defaultProcessRow(name) {
+  return { type: "Process", description: name, uom: "Pcs", rate: 0, consumption: 1, vendor: "", billNo: "", received: false };
+}
+
+function defaultFixedComponents() {
+  return [defaultFabricRow(), ...FIXED_PROCESS_NAMES.map(defaultProcessRow), defaultProcessRow("Other")];
+}
+
 function defaultPart() {
-  return { enabled: false, sellingRate: 0, components: [] };
+  return { enabled: false, sellingRate: 0, components: defaultFixedComponents() };
 }
 
 function defaultParts() {
   return Object.fromEntries(PART_KEYS.map((k) => [k, defaultPart()]));
-}
-
-function newComponentRow(type = "Fabric") {
-  if (type === "Fabric") {
-    return { type, description: "", uom: "Mtr", rate: 0, sizeConsumption: defaultSizeQty() };
-  }
-  return { type, description: "", uom: "Pcs", rate: 0, consumption: 1, vendor: "", billNo: "", received: false };
 }
 
 function costOfRow(row) {
@@ -182,26 +190,24 @@ function renderPartTable(partKey) {
       <table class="comp-table">
         <thead>
           <tr>
-            <th style="width:90px;">Type</th>
-            <th style="min-width:160px;">Description</th>
+            <th style="min-width:180px;">Line Item</th>
             <th style="width:70px;">UOM</th>
             <th style="width:80px;">Rate</th>
             <th style="width:280px;">Consumption (Average)</th>
             <th style="width:120px;">Vendor</th>
             <th style="width:100px;">Bill No.</th>
             <th style="width:70px;">Received</th>
-            <th style="width:36px;"></th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
       </table>
     </div>
-    <button class="btn-secondary" type="button" data-action="add-row" data-part="${partKey}">+ Add Row</button>
   `;
 }
 
 function renderComponentRow(partKey, row, idx) {
   const isFabric = row.type === "Fabric";
+  const isOther = idx === FIXED_PROCESS_NAMES.length + 1; // last row
   const consumptionCell = isFabric
     ? `<div class="size-inputs">${SIZES.map(
         (sz) => `
@@ -222,24 +228,15 @@ function renderComponentRow(partKey, row, idx) {
     ? `<span style="color:var(--muted); font-size:12px;">-</span>`
     : `<input data-part="${partKey}" data-idx="${idx}" data-field="received" type="checkbox" ${row.received ? "checked" : ""} />`;
 
-  const knownProcess = PROCESS_TYPES.includes(row.description) ? row.description : "Other";
-  const descriptionCell = isFabric
-    ? `<input data-part="${partKey}" data-idx="${idx}" data-field="description" value="${escapeAttr(row.description)}" placeholder="e.g. Self Fabric - Rayon" />`
-    : `
-      <select data-part="${partKey}" data-idx="${idx}" data-field="processName">
-        ${PROCESS_TYPES.map((p) => `<option value="${p}" ${p === knownProcess ? "selected" : ""}>${p}</option>`).join("")}
-      </select>
-      ${knownProcess === "Other" ? `<input data-part="${partKey}" data-idx="${idx}" data-field="description" value="${escapeAttr(row.description)}" placeholder="Specify process" style="margin-top:4px;" />` : ""}
-    `;
+  // Fabric and "Other" are the only free-text names; the fixed process
+  // rows in between are plain labels - there's nothing to choose or type.
+  const descriptionCell =
+    isFabric || isOther
+      ? `<input data-part="${partKey}" data-idx="${idx}" data-field="description" value="${escapeAttr(row.description)}" placeholder="${isFabric ? "e.g. Self Fabric - Rayon" : "Specify other line item"}" />`
+      : `<span>${escapeAttr(row.description)}</span>`;
 
   return `
     <tr>
-      <td>
-        <select data-part="${partKey}" data-idx="${idx}" data-field="type">
-          <option value="Fabric" ${isFabric ? "selected" : ""}>Fabric</option>
-          <option value="Process" ${!isFabric ? "selected" : ""}>Process</option>
-        </select>
-      </td>
       <td>${descriptionCell}</td>
       <td><input data-part="${partKey}" data-idx="${idx}" data-field="uom" value="${escapeAttr(row.uom)}" placeholder="Mtr/Pcs" /></td>
       <td><input data-part="${partKey}" data-idx="${idx}" data-field="rate" type="number" step="0.01" min="0" value="${row.rate}" /></td>
@@ -247,7 +244,6 @@ function renderComponentRow(partKey, row, idx) {
       <td>${vendorCell}</td>
       <td>${billCell}</td>
       <td style="text-align:center;">${receivedCell}</td>
-      <td><button class="btn-small" type="button" data-action="remove" data-part="${partKey}" data-idx="${idx}">✕</button></td>
     </tr>
   `;
 }
@@ -303,7 +299,7 @@ el("partsContainer").addEventListener("input", (e) => {
     return;
   }
   const field = t.dataset.field;
-  if (!field || field === "type" || field === "processName") return;
+  if (!field) return;
   const row = parts[t.dataset.part].components[Number(t.dataset.idx)];
   if (field === "sizeConsumption") {
     row.sizeConsumption[t.dataset.size] = Number(t.value) || 0;
@@ -320,42 +316,7 @@ el("partsContainer").addEventListener("input", (e) => {
 el("partsContainer").addEventListener("change", (e) => {
   const t = e.target;
   if (t.dataset.action === "toggle-part") {
-    const key = t.dataset.part;
-    parts[key].enabled = t.checked;
-    if (parts[key].enabled && parts[key].components.length === 0) {
-      parts[key].components.push(newComponentRow());
-    }
-    renderParts();
-    return;
-  }
-  if (t.dataset.field === "type") {
-    const row = parts[t.dataset.part].components[Number(t.dataset.idx)];
-    const newType = t.value;
-    if (newType === row.type) return;
-    const replacement = newComponentRow(newType);
-    replacement.description = row.description;
-    replacement.uom = row.uom;
-    replacement.rate = row.rate;
-    parts[t.dataset.part].components[Number(t.dataset.idx)] = replacement;
-    renderParts();
-    return;
-  }
-  if (t.dataset.field === "processName") {
-    const row = parts[t.dataset.part].components[Number(t.dataset.idx)];
-    row.description = t.value === "Other" ? "" : t.value;
-    renderParts();
-  }
-});
-
-el("partsContainer").addEventListener("click", (e) => {
-  const btn = e.target.closest("button[data-action]");
-  if (!btn) return;
-  const partKey = btn.dataset.part;
-  if (btn.dataset.action === "add-row") {
-    parts[partKey].components.push(newComponentRow());
-    renderParts();
-  } else if (btn.dataset.action === "remove") {
-    parts[partKey].components.splice(Number(btn.dataset.idx), 1);
+    parts[t.dataset.part].enabled = t.checked;
     renderParts();
   }
 });
@@ -467,7 +428,7 @@ async function saveStyle() {
     partsToSave[key] = {
       enabled: parts[key].enabled,
       sellingRate: parts[key].sellingRate,
-      components: parts[key].components.filter((c) => c.description.trim() !== ""),
+      components: parts[key].components,
     };
   }
   const colorsToSave = colors.filter((c) => c.name.trim() !== "");

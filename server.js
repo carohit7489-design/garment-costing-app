@@ -19,6 +19,21 @@ const SESSION_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours
 
 const SIZES = ["40", "42", "44", "46", "48", "50", "52"];
 const PART_KEYS = ["kurta", "pant", "dupatta"];
+// Fixed line items every part offers, matching the client's own process
+// list - the owner fills in rate/consumption for whichever apply and
+// leaves the rest at 0, rather than building the row list by hand.
+const FIXED_PROCESS_NAMES = [
+  "Cutting",
+  "Stitching",
+  "Finishing",
+  "Pin Tucks",
+  "Lace",
+  "Computer Embroidery Border",
+  "Computer Embroidery Yoke",
+  "Adda Work",
+  "Tussel",
+  "MOH + Material",
+];
 
 fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 app.use("/uploads", express.static(UPLOADS_DIR));
@@ -131,8 +146,50 @@ function defaultColor() {
   return { name: "", qty: defaultSizeQty() };
 }
 
+function defaultFabricRow() {
+  return { type: "Fabric", description: "Fabric", uom: "Mtr", rate: 0, sizeConsumption: defaultSizeQty() };
+}
+
+function defaultProcessRow(name) {
+  return { type: "Process", description: name, uom: "Pcs", rate: 0, consumption: 1, vendor: "", billNo: "", received: false };
+}
+
+function defaultFixedComponents() {
+  return [defaultFabricRow(), ...FIXED_PROCESS_NAMES.map(defaultProcessRow), defaultProcessRow("Other")];
+}
+
+// Reconciles a part's stored components against the fixed line-item list -
+// values entered against a matching name carry over; anything that doesn't
+// match a fixed name folds into the "Other" slot so nothing is silently lost.
+function reconcileFixedComponents(existing) {
+  let fabricRow = null;
+  const byName = new Map();
+  const leftovers = [];
+  for (const c of existing) {
+    if (c.type === "Fabric") {
+      if (!fabricRow) fabricRow = c;
+      continue;
+    }
+    const match = FIXED_PROCESS_NAMES.find((n) => n.toLowerCase() === String(c.description || "").trim().toLowerCase());
+    if (match && !byName.has(match)) byName.set(match, c);
+    else leftovers.push(c);
+  }
+
+  const fabric = fabricRow ? { ...defaultFabricRow(), ...fabricRow, type: "Fabric" } : defaultFabricRow();
+  const processRows = FIXED_PROCESS_NAMES.map((name) => {
+    const row = byName.get(name);
+    return row ? { ...defaultProcessRow(name), ...row, description: name } : defaultProcessRow(name);
+  });
+  const otherSource = leftovers[0];
+  const otherRow = otherSource
+    ? { ...defaultProcessRow(otherSource.description || "Other"), ...otherSource }
+    : defaultProcessRow("Other");
+
+  return [fabric, ...processRows, otherRow];
+}
+
 function defaultPart() {
-  return { enabled: false, sellingRate: 0, components: [] };
+  return { enabled: false, sellingRate: 0, components: defaultFixedComponents() };
 }
 
 function defaultParts() {
@@ -187,7 +244,7 @@ function migrateStyle(style) {
       parts[key] = {
         enabled: !!part.enabled,
         sellingRate: Number(part.sellingRate) || 0,
-        components: (part.components || []).map(migrateComponent),
+        components: reconcileFixedComponents((part.components || []).map(migrateComponent)),
       };
     }
   } else {
@@ -279,9 +336,17 @@ app.get("/api/styles/:id/production-view", (req, res) => {
   const parts = {};
   for (const key of PART_KEYS) {
     const part = style.parts[key];
-    parts[key] = {
-      enabled: part.enabled,
-      components: part.components.map((c, index) => ({
+    // Only show line items the owner actually priced (rate > 0) - every
+    // part carries all 12 fixed rows internally, but production shouldn't
+    // have to fill in "Adda Work" for a style that never used it.
+    const components = [];
+    part.components.forEach((c, index) => {
+      const isActive =
+        c.type === "Fabric"
+          ? Number(c.rate) > 0 || Object.values(c.sizeConsumption || {}).some((v) => Number(v) > 0)
+          : Number(c.rate) > 0;
+      if (!isActive) return;
+      components.push({
         index,
         type: c.type,
         description: c.description,
@@ -293,8 +358,9 @@ app.get("/api/styles/:id/production-view", (req, res) => {
         vendor: c.type === "Process" ? c.vendor : undefined,
         billNo: c.type === "Process" ? c.billNo : undefined,
         received: c.type === "Process" ? c.received : undefined,
-      })),
-    };
+      });
+    });
+    parts[key] = { enabled: part.enabled, components };
   }
 
   res.json({
@@ -355,7 +421,7 @@ function parseParts(raw) {
     parts[key] = {
       enabled: !!part.enabled,
       sellingRate: Number(part.sellingRate) || 0,
-      components: components.map(migrateComponent),
+      components: reconcileFixedComponents(components.map(migrateComponent)),
     };
   }
   return parts;
