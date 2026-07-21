@@ -51,24 +51,50 @@ function estConsumptionFor(component, size) {
     : Number(component.consumption) || 0;
 }
 
+// Costing is done per single piece; production works in whole batches, so
+// the per-piece figures are scaled up by however many pieces were made.
+// Falls back to 1 (i.e. shows the per-piece figure as-is) until a qty is entered.
+function currentQtyMultiplier() {
+  const v = Number(el("actualQty").value);
+  return v > 0 ? v : 1;
+}
+
 function buildActualLines() {
   actualData = {};
+  const multiplier = currentQtyMultiplier();
   PART_KEYS.forEach((key) => {
     const part = currentStyle.parts[key];
     actualData[key] = !part.enabled
       ? []
-      : part.components.map((c) => ({
-          index: c.index,
-          type: c.type,
-          description: c.description,
-          uom: c.uom,
-          estConsumption: estConsumptionFor(c, selectedSize),
-          actualConsumption: "",
-          vendor: c.vendor || "",
-          billNo: c.billNo || "",
-          received: !!c.received,
-        }));
+      : part.components.map((c) => {
+          const estPerPiece = estConsumptionFor(c, selectedSize);
+          return {
+            index: c.index,
+            type: c.type,
+            description: c.description,
+            uom: c.uom,
+            estPerPiece,
+            estConsumption: estPerPiece * multiplier,
+            actualConsumption: "",
+            vendor: c.vendor || "",
+            billNo: c.billNo || "",
+            received: !!c.received,
+          };
+        });
   });
+}
+
+// Re-scales expected totals when the produced-qty field changes, without
+// touching any actual-consumption values already typed in.
+function refreshExpectedConsumption() {
+  if (!currentStyle) return;
+  const multiplier = currentQtyMultiplier();
+  PART_KEYS.forEach((key) => {
+    actualData[key].forEach((row) => {
+      row.estConsumption = row.estPerPiece * multiplier;
+    });
+  });
+  renderPartsActual();
 }
 
 async function openStyle(id) {
@@ -155,8 +181,8 @@ function renderPartActualTable(partKey) {
           <td>${escapeAttr(row.type)}</td>
           <td>${escapeAttr(row.description)}</td>
           <td>${escapeAttr(row.uom)}</td>
-          <td>${row.estConsumption}</td>
-          <td><input class="actual-input" data-part="${partKey}" data-idx="${idx}" type="number" step="0.01" min="0" value="${row.actualConsumption}" placeholder="Enter actual" /></td>
+          <td>${row.estConsumption.toFixed(2)}</td>
+          <td><input class="actual-input" data-part="${partKey}" data-idx="${idx}" type="number" step="0.01" min="0" value="${row.actualConsumption}" placeholder="Total used" /></td>
           <td style="color:${color};" data-variance-cell="${partKey}-${idx}">${varianceText}</td>
           <td>${vendorCell}</td>
           <td>${billCell}</td>
@@ -173,8 +199,8 @@ function renderPartActualTable(partKey) {
             <th style="width:90px;">Type</th>
             <th style="min-width:140px;">Description</th>
             <th style="width:60px;">UOM</th>
-            <th style="width:100px;">Est. Consumption</th>
-            <th style="width:130px;">Actual Consumption</th>
+            <th style="width:110px;">Expected Total (for entered pcs)</th>
+            <th style="width:130px;">Actual Total Used</th>
             <th style="width:80px;">Variance</th>
             <th style="width:120px;">Vendor</th>
             <th style="width:100px;">Bill No.</th>
@@ -258,6 +284,8 @@ el("colorSelect").addEventListener("change", (e) => {
   selectedColor = e.target.value;
 });
 
+el("actualQty").addEventListener("input", refreshExpectedConsumption);
+
 function renderHistory() {
   const container = el("historyList");
   const entries = currentStyle.actuals || [];
@@ -270,7 +298,7 @@ function renderHistory() {
     .reverse()
     .map((e) => {
       const linesHtml = e.lines
-        .map((l) => `${escapeAttr(l.part ? PART_LABELS[l.part] + " - " : "")}${escapeAttr(l.description)}: ${l.actualConsumption} ${escapeAttr(l.uom)} (est. ${l.estConsumption})`)
+        .map((l) => `${escapeAttr(l.part ? PART_LABELS[l.part] + " - " : "")}${escapeAttr(l.description)}: ${l.actualConsumption} ${escapeAttr(l.uom)} used (expected ${l.estConsumption} for ${e.actualProducedQty} pcs)`)
         .join(" · ");
       return `<div class="hist-item"><strong>${e.productionDate || "-"}</strong> · ${escapeAttr(e.color || "-")} / Size ${escapeAttr(e.size || "-")} · Produced ${e.actualProducedQty} pcs · Filled by ${escapeAttr(e.filledBy || "-")}<br/>${linesHtml}</div>`;
     })

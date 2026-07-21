@@ -381,7 +381,10 @@ function resetForm() {
   el("orderType").value = "Bulk";
   el("pocket").value = "";
   el("patti").value = "";
-  colors = [];
+  // New styles default to a quantity of 1, since the real order total now
+  // comes from what production enters - this just keeps costing/margin
+  // figures meaningful (per-piece) before an actual order qty is known.
+  colors = [{ name: "Default", qty: { ...defaultSizeQty(), [SIZES[0]]: 1 } }];
   parts = defaultParts();
   el("formTitle").textContent = "New Style - Design & Component Sheet";
   el("statusText").textContent = "";
