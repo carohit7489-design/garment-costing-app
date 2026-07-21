@@ -38,6 +38,11 @@
         <div>Total Order Qty<strong id="infoTotalQty">-</strong></div>
       </div>
 
+      <div id="notApprovedBanner" class="empty-state" style="display:none; background:#fdecea; border:1px solid #f5c2c0; border-radius:6px; color:var(--red); font-weight:bold;">
+        This design has not been approved by the owner yet - actual consumption cannot be logged until it is.
+      </div>
+
+      <div id="entryForm">
       <div class="form-grid form-grid-5">
         <div class="field">
           <label>Color</label>
@@ -66,6 +71,7 @@
       <div class="actions-row">
         <div id="statusText" style="color:#64748b; font-size:12px;"></div>
         <button class="btn-primary" id="saveActualsBtn">Save Actual Consumption</button>
+      </div>
       </div>
 
       <div class="panel" style="margin-top:20px;">

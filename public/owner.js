@@ -23,6 +23,11 @@ let colors = [];
 let parts = defaultParts();
 let existingDesignImagePath = null; // design image already saved on the server, if any
 let removeImageRequested = false;
+let styleActuals = []; // production entries for the currently loaded style, for variance analysis
+
+function defaultApproval() {
+  return { status: "Pending", approverName: "", date: "", remarks: "" };
+}
 
 const el = (id) => document.getElementById(id);
 
@@ -288,6 +293,49 @@ function renderCostSummary() {
   el("sumMargin").textContent = qty ? `${currency} ${(totalSellingValue - totalCostValue).toFixed(2)}` : "-";
 }
 
+// ---- Variance analysis (aggregated across all production entries) ----
+
+function renderVarianceTable() {
+  const totals = new Map(); // key: `${part}|${description}` -> { part, description, uom, expected, actual }
+  styleActuals.forEach((entry) => {
+    (entry.lines || []).forEach((line) => {
+      const key = `${line.part}|${line.description}`;
+      if (!totals.has(key)) {
+        totals.set(key, { part: line.part, description: line.description, uom: line.uom, expected: 0, actual: 0 });
+      }
+      const t = totals.get(key);
+      t.expected += Number(line.estConsumption) || 0;
+      t.actual += Number(line.actualConsumption) || 0;
+    });
+  });
+
+  const rows = Array.from(totals.values());
+  if (rows.length === 0) {
+    el("varianceTable").style.display = "none";
+    el("varianceEmptyState").style.display = "block";
+    return;
+  }
+  el("varianceTable").style.display = "";
+  el("varianceEmptyState").style.display = "none";
+
+  el("varianceBody").innerHTML = rows
+    .map((r) => {
+      const variance = r.actual - r.expected;
+      const color = variance > 0 ? "#c0392b" : variance < 0 ? "#1a7a3c" : "#64748b";
+      return `
+        <tr>
+          <td>${escapeAttr(PART_LABELS[r.part] || r.part)}</td>
+          <td>${escapeAttr(r.description)}</td>
+          <td>${escapeAttr(r.uom)}</td>
+          <td>${r.expected.toFixed(2)}</td>
+          <td>${r.actual.toFixed(2)}</td>
+          <td style="color:${color};">${(variance > 0 ? "+" : "") + variance.toFixed(2)}</td>
+        </tr>
+      `;
+    })
+    .join("");
+}
+
 // Event delegation: one set of listeners handles every part's table, since
 // tables are re-created whenever a part is toggled or a row added/removed.
 
@@ -339,9 +387,11 @@ async function loadStyleList(selectId) {
     .forEach((s) => {
       const li = document.createElement("li");
       li.className = s.id === selectId ? "active" : "";
+      const approvalColor = s.designApprovalStatus === "Approved" ? "#1a7a3c" : s.designApprovalStatus === "Rejected" ? "var(--red)" : "var(--muted)";
       li.innerHTML = `
         <div class="sname">${escapeAttr(s.styleNo)} - ${escapeAttr(s.styleName)}</div>
         <div class="smeta">${escapeAttr(s.buyer || "-")} · ${escapeAttr(s.orderType)} · ${s.totalPcs} pcs · ${s.componentCount} rows · ${s.actualsCount} production entries</div>
+        <div class="smeta" style="color:${approvalColor}; font-weight:bold;">Design: ${escapeAttr(s.designApprovalStatus)}</div>
       `;
       li.addEventListener("click", () => openStyle(s.id));
       list.appendChild(li);
@@ -363,10 +413,25 @@ async function openStyle(id) {
   el("patti").value = s.patti || "";
   colors = s.colors && s.colors.length ? s.colors : [];
   parts = s.parts;
+  styleActuals = s.actuals || [];
   el("formTitle").textContent = `Editing: ${s.styleNo} - ${s.styleName}`;
   el("statusText").textContent = `Created ${new Date(s.createdAt).toLocaleString()} · Last updated ${new Date(s.updatedAt).toLocaleString()}`;
+
+  const designApproval = s.designApproval || defaultApproval();
+  el("designApprovalStatus").value = designApproval.status;
+  el("designApprovalApprover").value = designApproval.approverName;
+  el("designApprovalDate").value = designApproval.date;
+  el("designApprovalRemarks").value = designApproval.remarks;
+
+  const varianceApproval = s.varianceApproval || defaultApproval();
+  el("varianceApprovalStatus").value = varianceApproval.status;
+  el("varianceApprovalApprover").value = varianceApproval.approverName;
+  el("varianceApprovalDate").value = varianceApproval.date;
+  el("varianceApprovalRemarks").value = varianceApproval.remarks;
+
   renderColorSizeTable();
   renderParts();
+  renderVarianceTable();
   resetDesignImageInput(s.designImagePath || null);
   loadStyleList(id);
 }
@@ -386,10 +451,23 @@ function resetForm() {
   // figures meaningful (per-piece) before an actual order qty is known.
   colors = [{ name: "Default", qty: { ...defaultSizeQty(), [SIZES[0]]: 1 } }];
   parts = defaultParts();
+  styleActuals = [];
   el("formTitle").textContent = "New Style - Design & Component Sheet";
   el("statusText").textContent = "";
+
+  const freshApproval = defaultApproval();
+  el("designApprovalStatus").value = freshApproval.status;
+  el("designApprovalApprover").value = freshApproval.approverName;
+  el("designApprovalDate").value = freshApproval.date;
+  el("designApprovalRemarks").value = freshApproval.remarks;
+  el("varianceApprovalStatus").value = freshApproval.status;
+  el("varianceApprovalApprover").value = freshApproval.approverName;
+  el("varianceApprovalDate").value = freshApproval.date;
+  el("varianceApprovalRemarks").value = freshApproval.remarks;
+
   renderColorSizeTable();
   renderParts();
+  renderVarianceTable();
   resetDesignImageInput(null);
   loadStyleList(null);
 }
@@ -447,6 +525,18 @@ async function saveStyle() {
   formData.append("patti", el("patti").value.trim());
   formData.append("colors", JSON.stringify(colorsToSave));
   formData.append("parts", JSON.stringify(partsToSave));
+  formData.append("designApproval", JSON.stringify({
+    status: el("designApprovalStatus").value,
+    approverName: el("designApprovalApprover").value.trim(),
+    date: el("designApprovalDate").value,
+    remarks: el("designApprovalRemarks").value.trim(),
+  }));
+  formData.append("varianceApproval", JSON.stringify({
+    status: el("varianceApprovalStatus").value,
+    approverName: el("varianceApprovalApprover").value.trim(),
+    date: el("varianceApprovalDate").value,
+    remarks: el("varianceApprovalRemarks").value.trim(),
+  }));
 
   const fileInput = el("designImageInput");
   if (fileInput.files[0]) {

@@ -146,6 +146,31 @@ function defaultColor() {
   return { name: "", qty: defaultSizeQty() };
 }
 
+function defaultApproval() {
+  return { status: "Pending", approverName: "", date: "", remarks: "" };
+}
+
+const APPROVAL_STATUSES = ["Pending", "Approved", "Rejected"];
+
+function parseApproval(raw, existing) {
+  let parsed = raw;
+  if (typeof raw === "string") {
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      parsed = null;
+    }
+  }
+  const base = existing || defaultApproval();
+  if (!parsed || typeof parsed !== "object") return base;
+  return {
+    status: APPROVAL_STATUSES.includes(parsed.status) ? parsed.status : base.status,
+    approverName: parsed.approverName ?? base.approverName,
+    date: parsed.date ?? base.date,
+    remarks: parsed.remarks ?? base.remarks,
+  };
+}
+
 function defaultFabricRow() {
   return { type: "Fabric", description: "Fabric", uom: "Mtr", rate: 0, sizeConsumption: defaultSizeQty() };
 }
@@ -273,6 +298,8 @@ function migrateStyle(style) {
     patti: style.patti || "",
     colors,
     parts,
+    designApproval: parseApproval(style.designApproval, defaultApproval()),
+    varianceApproval: parseApproval(style.varianceApproval, defaultApproval()),
   };
 }
 
@@ -314,6 +341,7 @@ app.get("/api/styles", (req, res) => {
     updatedAt: s.updatedAt,
     componentCount: partComponentCount(s),
     actualsCount: (s.actuals || []).length,
+    designApprovalStatus: s.designApproval.status,
   }));
   res.json(summary);
 });
@@ -374,6 +402,9 @@ app.get("/api/styles/:id/production-view", (req, res) => {
     parts,
     designImagePath: style.designImagePath || null,
     actuals: style.actuals || [],
+    // Status only - approver name/remarks are context for the owner, not
+    // something production needs, but the status gates whether they can log.
+    designApprovalStatus: style.designApproval.status,
   });
 });
 
@@ -472,6 +503,8 @@ app.post("/api/styles", requireOwnerAuth, upload.single("designImage"), (req, re
     parts: parseParts(body.parts),
     designImagePath: req.file ? `/uploads/${req.file.filename}` : null,
     actuals: [],
+    designApproval: parseApproval(body.designApproval, defaultApproval()),
+    varianceApproval: parseApproval(body.varianceApproval, defaultApproval()),
     createdAt: now,
     updatedAt: now,
   };
@@ -509,6 +542,8 @@ app.put("/api/styles/:id", requireOwnerAuth, upload.single("designImage"), (req,
     currency: body.currency ?? existing.currency,
     colors: body.colors !== undefined ? parseColors(body.colors) : existing.colors,
     parts: body.parts !== undefined ? parseParts(body.parts) : existing.parts,
+    designApproval: body.designApproval !== undefined ? parseApproval(body.designApproval, existing.designApproval) : existing.designApproval,
+    varianceApproval: body.varianceApproval !== undefined ? parseApproval(body.varianceApproval, existing.varianceApproval) : existing.varianceApproval,
     designImagePath,
     updatedAt: new Date().toISOString(),
   };
@@ -523,6 +558,10 @@ app.post("/api/styles/:id/actuals", (req, res) => {
   const styles = readStyles();
   const idx = styles.findIndex((s) => s.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error: "Style not found" });
+
+  if (styles[idx].designApproval.status !== "Approved") {
+    return res.status(403).json({ error: "Design has not been approved yet - production cannot log actuals until the owner approves the design." });
+  }
 
   const body = req.body;
   const entry = {

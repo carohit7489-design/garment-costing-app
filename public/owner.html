@@ -89,6 +89,33 @@
     </div>
 
     <section class="panel" style="margin-top:16px;">
+      <h2>Design Approval</h2>
+      <div class="form-grid" style="grid-template-columns: repeat(4, 1fr);">
+        <div class="field">
+          <label>Status</label>
+          <select id="designApprovalStatus">
+            <option value="Pending">Pending</option>
+            <option value="Approved">Approved</option>
+            <option value="Rejected">Rejected</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Approver Name</label>
+          <input id="designApprovalApprover" placeholder="e.g. Rohit" />
+        </div>
+        <div class="field">
+          <label>Date</label>
+          <input id="designApprovalDate" type="date" />
+        </div>
+        <div class="field">
+          <label>Remarks</label>
+          <input id="designApprovalRemarks" placeholder="Optional" />
+        </div>
+      </div>
+      <p style="color:var(--muted); font-size:12px; margin:0;">Production cannot log actual consumption for this style until this is set to Approved.</p>
+    </section>
+
+    <section class="panel" style="margin-top:16px;">
       <h2>Order Quantity by Color &amp; Size</h2>
       <div class="table-scroll">
         <table class="comp-table" id="colorSizeTable">
@@ -115,6 +142,49 @@
         <div>Total Selling Value<strong id="sumSellingValue">-</strong></div>
         <div>Total Cost Value<strong id="sumCostValue">-</strong></div>
         <div>Total Margin<strong id="sumMargin">-</strong></div>
+      </div>
+    </section>
+
+    <section class="panel" style="margin-top:16px;">
+      <h2>Variance Analysis &amp; Approval</h2>
+      <div class="table-scroll">
+        <table class="comp-table" id="varianceTable">
+          <thead>
+            <tr>
+              <th>Part</th>
+              <th>Line Item</th>
+              <th>UOM</th>
+              <th>Total Expected</th>
+              <th>Total Actual</th>
+              <th>Total Variance</th>
+            </tr>
+          </thead>
+          <tbody id="varianceBody"></tbody>
+        </table>
+      </div>
+      <div id="varianceEmptyState" class="empty-state" style="display:none;">No production entries logged yet for this style.</div>
+
+      <div class="form-grid" style="grid-template-columns: repeat(4, 1fr); margin-top:12px;">
+        <div class="field">
+          <label>Status</label>
+          <select id="varianceApprovalStatus">
+            <option value="Pending">Pending</option>
+            <option value="Approved">Approved</option>
+            <option value="Rejected">Rejected</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Approver Name</label>
+          <input id="varianceApprovalApprover" placeholder="e.g. Rohit" />
+        </div>
+        <div class="field">
+          <label>Date</label>
+          <input id="varianceApprovalDate" type="date" />
+        </div>
+        <div class="field">
+          <label>Remarks</label>
+          <input id="varianceApprovalRemarks" placeholder="Optional" />
+        </div>
       </div>
     </section>
 

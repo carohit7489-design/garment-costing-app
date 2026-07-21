@@ -36,9 +36,11 @@ async function loadStyleList(selectId) {
     .forEach((s) => {
       const li = document.createElement("li");
       li.className = s.id === selectId ? "active" : "";
+      const approvalColor = s.designApprovalStatus === "Approved" ? "#1a7a3c" : s.designApprovalStatus === "Rejected" ? "var(--red)" : "var(--muted)";
       li.innerHTML = `
         <div class="sname">${escapeAttr(s.styleNo)} - ${escapeAttr(s.styleName)}</div>
         <div class="smeta">${escapeAttr(s.buyer || "-")} · ${escapeAttr(s.orderType)} · ${s.totalPcs} pcs · ${s.componentCount} rows · ${s.actualsCount} production entries</div>
+        <div class="smeta" style="color:${approvalColor}; font-weight:bold;">Design: ${escapeAttr(s.designApprovalStatus)}</div>
       `;
       li.addEventListener("click", () => openStyle(s.id));
       list.appendChild(li);
@@ -134,6 +136,10 @@ async function openStyle(id) {
   el("prodDate").value = new Date().toISOString().slice(0, 10);
   el("filledBy").value = "";
   el("sizeSelect").value = selectedSize;
+
+  const approved = s.designApprovalStatus === "Approved";
+  el("notApprovedBanner").style.display = approved ? "none" : "block";
+  el("entryForm").style.display = approved ? "" : "none";
 
   buildActualLines();
   renderPartsActual();
