@@ -24,9 +24,10 @@ let parts = defaultParts();
 let existingDesignImagePath = null; // design image already saved on the server, if any
 let removeImageRequested = false;
 let styleActuals = []; // production entries for the currently loaded style, for variance analysis
+let designApproval = defaultApproval("Not Sent"); // read-only display; only changes via Send for Approval / the approver's decision
 
-function defaultApproval() {
-  return { status: "Pending", approverName: "", date: "", remarks: "" };
+function defaultApproval(status) {
+  return { status, approverName: "", date: "", remarks: "" };
 }
 
 const el = (id) => document.getElementById(id);
@@ -295,6 +296,53 @@ function renderCostSummary() {
 
 // ---- Variance analysis (aggregated across all production entries) ----
 
+const DESIGN_STATUS_COLORS = {
+  "Not Sent": "var(--muted)",
+  "Sent for Approval": "#b8860b",
+  Approved: "#1a7a3c",
+  Rejected: "var(--red)",
+};
+
+function renderDesignApproval() {
+  const statusEl = el("designApprovalStatusText");
+  statusEl.textContent = designApproval.status;
+  statusEl.style.color = DESIGN_STATUS_COLORS[designApproval.status] || "";
+
+  const decided = designApproval.status === "Approved" || designApproval.status === "Rejected";
+  el("designApprovalDecisionWrap").style.display = decided ? "" : "none";
+  if (decided) {
+    el("designApprovalDecisionText").textContent = `${designApproval.approverName || "-"} on ${designApproval.date || "-"}`;
+  }
+  el("designApprovalRemarksWrap").style.display = designApproval.remarks ? "" : "none";
+  el("designApprovalRemarksText").textContent = designApproval.remarks;
+
+  const btn = el("sendForApprovalBtn");
+  btn.textContent = designApproval.status === "Rejected" ? "Re-send for Approval" : "Send for Approval";
+  btn.disabled = !currentStyleId && designApproval.status === "Sent for Approval";
+}
+
+async function sendForApproval() {
+  if (!currentStyleId) {
+    toast("Save the component sheet first (Style No. and Style Name are required)", true);
+    return;
+  }
+  await saveStyle();
+  if (!currentStyleId) return; // save failed
+  const res = await fetch(`/api/styles/${currentStyleId}/design-approval/send`, { method: "POST" });
+  if (res.status === 401) {
+    showLogin("Your session expired. Please log in again.");
+    return;
+  }
+  if (!res.ok) {
+    toast("Could not send for approval", true);
+    return;
+  }
+  toast("Sent for approval");
+  openStyle(currentStyleId);
+}
+
+el("sendForApprovalBtn").addEventListener("click", sendForApproval);
+
 function renderVarianceTable() {
   const totals = new Map(); // key: `${part}|${description}` -> { part, description, uom, expected, actual }
   styleActuals.forEach((entry) => {
@@ -400,6 +448,10 @@ async function loadStyleList(selectId) {
 
 async function openStyle(id) {
   const res = await fetch(`/api/styles/${id}`);
+  if (res.status === 401) {
+    showLogin("Your session expired. Please log in again.");
+    return;
+  }
   if (!res.ok) return toast("Could not load style", true);
   const s = await res.json();
   currentStyleId = s.id;
@@ -417,13 +469,10 @@ async function openStyle(id) {
   el("formTitle").textContent = `Editing: ${s.styleNo} - ${s.styleName}`;
   el("statusText").textContent = `Created ${new Date(s.createdAt).toLocaleString()} · Last updated ${new Date(s.updatedAt).toLocaleString()}`;
 
-  const designApproval = s.designApproval || defaultApproval();
-  el("designApprovalStatus").value = designApproval.status;
-  el("designApprovalApprover").value = designApproval.approverName;
-  el("designApprovalDate").value = designApproval.date;
-  el("designApprovalRemarks").value = designApproval.remarks;
+  designApproval = s.designApproval || defaultApproval("Not Sent");
+  renderDesignApproval();
 
-  const varianceApproval = s.varianceApproval || defaultApproval();
+  const varianceApproval = s.varianceApproval || defaultApproval("Pending");
   el("varianceApprovalStatus").value = varianceApproval.status;
   el("varianceApprovalApprover").value = varianceApproval.approverName;
   el("varianceApprovalDate").value = varianceApproval.date;
@@ -455,15 +504,14 @@ function resetForm() {
   el("formTitle").textContent = "New Style - Design & Component Sheet";
   el("statusText").textContent = "";
 
-  const freshApproval = defaultApproval();
-  el("designApprovalStatus").value = freshApproval.status;
-  el("designApprovalApprover").value = freshApproval.approverName;
-  el("designApprovalDate").value = freshApproval.date;
-  el("designApprovalRemarks").value = freshApproval.remarks;
-  el("varianceApprovalStatus").value = freshApproval.status;
-  el("varianceApprovalApprover").value = freshApproval.approverName;
-  el("varianceApprovalDate").value = freshApproval.date;
-  el("varianceApprovalRemarks").value = freshApproval.remarks;
+  designApproval = defaultApproval("Not Sent");
+  renderDesignApproval();
+
+  const freshVariance = defaultApproval("Pending");
+  el("varianceApprovalStatus").value = freshVariance.status;
+  el("varianceApprovalApprover").value = freshVariance.approverName;
+  el("varianceApprovalDate").value = freshVariance.date;
+  el("varianceApprovalRemarks").value = freshVariance.remarks;
 
   renderColorSizeTable();
   renderParts();
@@ -525,12 +573,8 @@ async function saveStyle() {
   formData.append("patti", el("patti").value.trim());
   formData.append("colors", JSON.stringify(colorsToSave));
   formData.append("parts", JSON.stringify(partsToSave));
-  formData.append("designApproval", JSON.stringify({
-    status: el("designApprovalStatus").value,
-    approverName: el("designApprovalApprover").value.trim(),
-    date: el("designApprovalDate").value,
-    remarks: el("designApprovalRemarks").value.trim(),
-  }));
+  // designApproval is intentionally not sent here - it only changes via
+  // "Send for Approval" or the approver's own decision, never a plain save.
   formData.append("varianceApproval", JSON.stringify({
     status: el("varianceApprovalStatus").value,
     approverName: el("varianceApprovalApprover").value.trim(),

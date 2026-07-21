@@ -15,6 +15,7 @@ const DATA_FILE = path.join(DATA_DIR, "styles.json");
 const CONFIG_FILE = path.join(DATA_DIR, "config.json");
 const UPLOADS_DIR = path.join(DATA_DIR, "uploads");
 const SESSION_COOKIE = "owner_session";
+const APPROVER_SESSION_COOKIE = "approver_session";
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours
 
 const SIZES = ["40", "42", "44", "46", "48", "50", "52"];
@@ -57,15 +58,14 @@ app.use(express.json());
 // is a convenience fallback for local development only.
 
 function readConfig() {
-  if (process.env.OWNER_PASSWORD) return { ownerPassword: process.env.OWNER_PASSWORD };
-  if (!fs.existsSync(CONFIG_FILE)) return {};
-  const raw = fs.readFileSync(CONFIG_FILE, "utf8").trim();
-  return raw ? JSON.parse(raw) : {};
+  const fileConfig = fs.existsSync(CONFIG_FILE) ? JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8").trim() || "{}") : {};
+  return {
+    ownerPassword: process.env.OWNER_PASSWORD || fileConfig.ownerPassword,
+    approverPassword: process.env.APPROVER_PASSWORD || fileConfig.approverPassword,
+  };
 }
 
-// ---- Owner sessions (in-memory) ----
-
-const sessions = new Map(); // token -> expiry timestamp
+// ---- Sessions (in-memory) - owner and approver are separate roles/logins ----
 
 function parseCookies(req) {
   const header = req.headers.cookie;
@@ -79,51 +79,76 @@ function parseCookies(req) {
   return cookies;
 }
 
-function isAuthenticated(req) {
-  const token = parseCookies(req)[SESSION_COOKIE];
-  if (!token) return false;
-  const expiry = sessions.get(token);
-  if (!expiry || expiry < Date.now()) {
-    sessions.delete(token);
-    return false;
+// Sets up login/logout/session routes plus an auth-requiring middleware for
+// one role. Owner and Approver each get their own password, cookie, and
+// in-memory session store, so one login has no bearing on the other.
+function setupAuthRole({ roleName, cookieName, routePrefix, passwordField }) {
+  const sessions = new Map(); // token -> expiry timestamp
+
+  function isAuthenticated(req) {
+    const token = parseCookies(req)[cookieName];
+    if (!token) return false;
+    const expiry = sessions.get(token);
+    if (!expiry || expiry < Date.now()) {
+      sessions.delete(token);
+      return false;
+    }
+    return true;
   }
-  return true;
+
+  function requireAuth(req, res, next) {
+    if (!isAuthenticated(req)) {
+      return res.status(401).json({ error: `${roleName} login required` });
+    }
+    next();
+  }
+
+  app.post(`/api/${routePrefix}/login`, (req, res) => {
+    const { password } = req.body || {};
+    const config = readConfig();
+    if (!password || password !== config[passwordField]) {
+      return res.status(401).json({ error: "Incorrect password" });
+    }
+    const token = crypto.randomUUID();
+    sessions.set(token, Date.now() + SESSION_TTL_MS);
+    const secure = req.secure ? " Secure;" : "";
+    res.setHeader(
+      "Set-Cookie",
+      `${cookieName}=${token}; HttpOnly;${secure} Path=/; Max-Age=${SESSION_TTL_MS / 1000}; SameSite=Strict`
+    );
+    res.json({ ok: true });
+  });
+
+  app.post(`/api/${routePrefix}/logout`, (req, res) => {
+    const token = parseCookies(req)[cookieName];
+    if (token) sessions.delete(token);
+    const secure = req.secure ? " Secure;" : "";
+    res.setHeader("Set-Cookie", `${cookieName}=;${secure} HttpOnly; Path=/; Max-Age=0`);
+    res.json({ ok: true });
+  });
+
+  app.get(`/api/${routePrefix}/session`, (req, res) => {
+    res.json({ authenticated: isAuthenticated(req) });
+  });
+
+  return { isAuthenticated, requireAuth };
 }
 
-function requireOwnerAuth(req, res, next) {
-  if (!isAuthenticated(req)) {
-    return res.status(401).json({ error: "Owner login required" });
-  }
-  next();
+const ownerAuth = setupAuthRole({ roleName: "Owner", cookieName: SESSION_COOKIE, routePrefix: "owner", passwordField: "ownerPassword" });
+const approverAuth = setupAuthRole({
+  roleName: "Approver",
+  cookieName: APPROVER_SESSION_COOKIE,
+  routePrefix: "approver",
+  passwordField: "approverPassword",
+});
+
+const requireOwnerAuth = ownerAuth.requireAuth;
+const requireApproverAuth = approverAuth.requireAuth;
+
+function requireOwnerOrApproverAuth(req, res, next) {
+  if (ownerAuth.isAuthenticated(req) || approverAuth.isAuthenticated(req)) return next();
+  return res.status(401).json({ error: "Owner or Approver login required" });
 }
-
-app.post("/api/owner/login", (req, res) => {
-  const { password } = req.body || {};
-  const config = readConfig();
-  if (!password || password !== config.ownerPassword) {
-    return res.status(401).json({ error: "Incorrect password" });
-  }
-  const token = crypto.randomUUID();
-  sessions.set(token, Date.now() + SESSION_TTL_MS);
-  const secure = req.secure ? " Secure;" : "";
-  res.setHeader(
-    "Set-Cookie",
-    `${SESSION_COOKIE}=${token}; HttpOnly;${secure} Path=/; Max-Age=${SESSION_TTL_MS / 1000}; SameSite=Strict`
-  );
-  res.json({ ok: true });
-});
-
-app.post("/api/owner/logout", (req, res) => {
-  const token = parseCookies(req)[SESSION_COOKIE];
-  if (token) sessions.delete(token);
-  const secure = req.secure ? " Secure;" : "";
-  res.setHeader("Set-Cookie", `${SESSION_COOKIE}=;${secure} HttpOnly; Path=/; Max-Age=0`);
-  res.json({ ok: true });
-});
-
-app.get("/api/owner/session", (req, res) => {
-  res.json({ authenticated: isAuthenticated(req) });
-});
 
 app.get("/", (req, res) => res.redirect("/production.html"));
 
@@ -146,13 +171,18 @@ function defaultColor() {
   return { name: "", qty: defaultSizeQty() };
 }
 
-function defaultApproval() {
-  return { status: "Pending", approverName: "", date: "", remarks: "" };
+// Design approval has a send/review workflow: "Not Sent" -> owner still
+// working on it. "Sent for Approval" -> in the approver's queue.
+// "Approved"/"Rejected" -> the approver's decision.
+const DESIGN_APPROVAL_STATUSES = ["Not Sent", "Sent for Approval", "Approved", "Rejected"];
+// Variance approval stays a simple inline sign-off on the owner page.
+const VARIANCE_APPROVAL_STATUSES = ["Pending", "Approved", "Rejected"];
+
+function defaultApproval(status) {
+  return { status, approverName: "", date: "", remarks: "" };
 }
 
-const APPROVAL_STATUSES = ["Pending", "Approved", "Rejected"];
-
-function parseApproval(raw, existing) {
+function parseApproval(raw, existing, validStatuses) {
   let parsed = raw;
   if (typeof raw === "string") {
     try {
@@ -161,13 +191,12 @@ function parseApproval(raw, existing) {
       parsed = null;
     }
   }
-  const base = existing || defaultApproval();
-  if (!parsed || typeof parsed !== "object") return base;
+  if (!parsed || typeof parsed !== "object") return existing;
   return {
-    status: APPROVAL_STATUSES.includes(parsed.status) ? parsed.status : base.status,
-    approverName: parsed.approverName ?? base.approverName,
-    date: parsed.date ?? base.date,
-    remarks: parsed.remarks ?? base.remarks,
+    status: validStatuses.includes(parsed.status) ? parsed.status : existing.status,
+    approverName: parsed.approverName ?? existing.approverName,
+    date: parsed.date ?? existing.date,
+    remarks: parsed.remarks ?? existing.remarks,
   };
 }
 
@@ -298,8 +327,8 @@ function migrateStyle(style) {
     patti: style.patti || "",
     colors,
     parts,
-    designApproval: parseApproval(style.designApproval, defaultApproval()),
-    varianceApproval: parseApproval(style.varianceApproval, defaultApproval()),
+    designApproval: parseApproval(style.designApproval, defaultApproval("Not Sent"), DESIGN_APPROVAL_STATUSES),
+    varianceApproval: parseApproval(style.varianceApproval, defaultApproval("Pending"), VARIANCE_APPROVAL_STATUSES),
   };
 }
 
@@ -346,7 +375,9 @@ app.get("/api/styles", (req, res) => {
   res.json(summary);
 });
 
-app.get("/api/styles/:id", (req, res) => {
+// Full style detail includes pricing (rate/vendor/bill) - owner (editing) or
+// approver (reviewing) only, not the open production-view below.
+app.get("/api/styles/:id", requireOwnerOrApproverAuth, (req, res) => {
   const styles = readStyles();
   const style = styles.find((s) => s.id === req.params.id);
   if (!style) return res.status(404).json({ error: "Style not found" });
@@ -503,8 +534,8 @@ app.post("/api/styles", requireOwnerAuth, upload.single("designImage"), (req, re
     parts: parseParts(body.parts),
     designImagePath: req.file ? `/uploads/${req.file.filename}` : null,
     actuals: [],
-    designApproval: parseApproval(body.designApproval, defaultApproval()),
-    varianceApproval: parseApproval(body.varianceApproval, defaultApproval()),
+    designApproval: parseApproval(body.designApproval, defaultApproval("Not Sent"), DESIGN_APPROVAL_STATUSES),
+    varianceApproval: parseApproval(body.varianceApproval, defaultApproval("Pending"), VARIANCE_APPROVAL_STATUSES),
     createdAt: now,
     updatedAt: now,
   };
@@ -542,11 +573,48 @@ app.put("/api/styles/:id", requireOwnerAuth, upload.single("designImage"), (req,
     currency: body.currency ?? existing.currency,
     colors: body.colors !== undefined ? parseColors(body.colors) : existing.colors,
     parts: body.parts !== undefined ? parseParts(body.parts) : existing.parts,
-    designApproval: body.designApproval !== undefined ? parseApproval(body.designApproval, existing.designApproval) : existing.designApproval,
-    varianceApproval: body.varianceApproval !== undefined ? parseApproval(body.varianceApproval, existing.varianceApproval) : existing.varianceApproval,
+    designApproval: body.designApproval !== undefined ? parseApproval(body.designApproval, existing.designApproval, DESIGN_APPROVAL_STATUSES) : existing.designApproval,
+    varianceApproval: body.varianceApproval !== undefined ? parseApproval(body.varianceApproval, existing.varianceApproval, VARIANCE_APPROVAL_STATUSES) : existing.varianceApproval,
     designImagePath,
     updatedAt: new Date().toISOString(),
   };
+  writeStyles(styles);
+  res.json(styles[idx]);
+});
+
+// Owner submits the current design + costing for approval - saves whatever
+// the client already sent as the style's data, then puts it in the
+// approver's queue. Any previous decision/remarks are cleared for the new round.
+app.post("/api/styles/:id/design-approval/send", requireOwnerAuth, (req, res) => {
+  const styles = readStyles();
+  const idx = styles.findIndex((s) => s.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: "Style not found" });
+
+  styles[idx].designApproval = { status: "Sent for Approval", approverName: "", date: "", remarks: "" };
+  styles[idx].updatedAt = new Date().toISOString();
+  writeStyles(styles);
+  res.json(styles[idx]);
+});
+
+// Approver's decision - can only touch designApproval, never pricing or
+// anything else in the style.
+app.put("/api/styles/:id/design-approval", requireApproverAuth, (req, res) => {
+  const styles = readStyles();
+  const idx = styles.findIndex((s) => s.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: "Style not found" });
+
+  const { status, approverName, remarks } = req.body || {};
+  if (status !== "Approved" && status !== "Rejected") {
+    return res.status(400).json({ error: "status must be Approved or Rejected" });
+  }
+
+  styles[idx].designApproval = {
+    status,
+    approverName: approverName || "",
+    date: new Date().toISOString().slice(0, 10),
+    remarks: remarks || "",
+  };
+  styles[idx].updatedAt = new Date().toISOString();
   writeStyles(styles);
   res.json(styles[idx]);
 });

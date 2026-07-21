@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Approver - Design Review</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<header class="top">
+  <h1>Garment Costing Module</h1>
+  <nav>
+    <a href="approver.html" class="active">Approver Review</a>
+    <a href="#" id="logoutLink" style="display:none;">Log out</a>
+  </nav>
+</header>
+
+<div class="login-overlay" id="loginOverlay">
+  <div class="login-box">
+    <h2>Approver Login</h2>
+    <p style="color:var(--muted); font-size:13px; margin-top:0;">Review and approve/reject styles submitted by the owner.</p>
+    <input id="loginPassword" type="password" placeholder="Password" autocomplete="current-password" />
+    <button class="btn-primary" id="loginBtn" style="width:100%; margin-top:10px;">Login</button>
+    <div id="loginError" class="login-error"></div>
+  </div>
+</div>
+
+<main id="appMain" style="display:none;">
+  <section class="panel">
+    <h2>Styles</h2>
+    <ul class="style-list" id="styleList"></ul>
+  </section>
+
+  <section class="panel" id="detailPanel">
+    <div class="empty-state" id="emptyState">Select a style on the left to review it.</div>
+
+    <div id="detailContent" style="display:none;">
+      <h2 id="formTitle">Style</h2>
+
+      <div class="design-preview" id="designPreviewWrap" style="margin-bottom:16px;">
+        <img id="designPreview" alt="Design preview" style="display:none;" />
+        <span id="designPreviewEmpty">No design image uploaded</span>
+      </div>
+
+      <div class="summary-bar">
+        <div>Style No.<strong id="infoStyleNo">-</strong></div>
+        <div>Buyer<strong id="infoBuyer">-</strong></div>
+        <div>Season<strong id="infoSeason">-</strong></div>
+        <div>Order Type<strong id="infoOrderType">-</strong></div>
+        <div>Pocket<strong id="infoPocket">-</strong></div>
+        <div>Patti<strong id="infoPatti">-</strong></div>
+      </div>
+
+      <section class="panel" style="margin-top:16px;">
+        <h2>Order Quantity by Color &amp; Size</h2>
+        <div class="table-scroll">
+          <table class="comp-table" id="colorSizeTable">
+            <thead><tr id="colorSizeHead"></tr></thead>
+            <tbody id="colorSizeBody"></tbody>
+            <tfoot><tr id="colorSizeFoot"></tr></tfoot>
+          </table>
+        </div>
+      </section>
+
+      <div id="partsContainer"></div>
+
+      <section class="panel" style="margin-top:16px;">
+        <h2>Cost Summary by Size</h2>
+        <div class="table-scroll">
+          <table class="comp-table" id="costSummaryTable">
+            <thead><tr id="costSummaryHead"></tr></thead>
+            <tbody id="costSummaryBody"></tbody>
+          </table>
+        </div>
+        <div class="summary-bar" style="margin-top:12px;">
+          <div>Total Order Qty<strong id="sumOrderQty">-</strong></div>
+          <div>Total Selling Value<strong id="sumSellingValue">-</strong></div>
+          <div>Total Cost Value<strong id="sumCostValue">-</strong></div>
+          <div>Total Margin<strong id="sumMargin">-</strong></div>
+        </div>
+      </section>
+
+      <section class="panel" style="margin-top:16px;">
+        <h2>Approval Decision</h2>
+
+        <div id="decisionPending">
+          <div class="form-grid" style="grid-template-columns: repeat(2, 1fr);">
+            <div class="field">
+              <label>Your Name</label>
+              <input id="approverName" placeholder="e.g. Rohit" />
+            </div>
+            <div class="field">
+              <label>Remarks</label>
+              <input id="approverRemarks" placeholder="Optional" />
+            </div>
+          </div>
+          <div class="actions-row">
+            <div id="statusText" style="color:#64748b; font-size:12px;"></div>
+            <div>
+              <button class="btn-small" type="button" id="rejectBtn" style="padding:10px 18px; font-size:13px;">Reject</button>
+              <button class="btn-primary" type="button" id="approveBtn">Approve</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="decisionDone" style="display:none;">
+          <div class="summary-bar">
+            <div>Decision<strong id="decisionStatus">-</strong></div>
+            <div>By<strong id="decisionApprover">-</strong></div>
+            <div>Date<strong id="decisionDate">-</strong></div>
+          </div>
+          <div id="decisionRemarksWrap" style="display:none; font-size:13px; color:var(--muted); margin-top:8px;">
+            Remarks: <span id="decisionRemarksText"></span>
+          </div>
+        </div>
+
+        <div id="notSentState" class="empty-state" style="display:none;">This style hasn't been sent for approval yet.</div>
+      </section>
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="approver.js"></script>
+</body>
+</html>

@@ -12,6 +12,7 @@
   <nav>
     <a href="owner.html" class="active">Owner - Design &amp; Costing</a>
     <a href="production.html">Production - Actual Consumption</a>
+    <a href="approver.html">Approver Review</a>
     <a href="#" id="logoutLink" style="display:none;">Log out</a>
   </nav>
 </header>
@@ -90,29 +91,17 @@
 
     <section class="panel" style="margin-top:16px;">
       <h2>Design Approval</h2>
-      <div class="form-grid" style="grid-template-columns: repeat(4, 1fr);">
-        <div class="field">
-          <label>Status</label>
-          <select id="designApprovalStatus">
-            <option value="Pending">Pending</option>
-            <option value="Approved">Approved</option>
-            <option value="Rejected">Rejected</option>
-          </select>
-        </div>
-        <div class="field">
-          <label>Approver Name</label>
-          <input id="designApprovalApprover" placeholder="e.g. Rohit" />
-        </div>
-        <div class="field">
-          <label>Date</label>
-          <input id="designApprovalDate" type="date" />
-        </div>
-        <div class="field">
-          <label>Remarks</label>
-          <input id="designApprovalRemarks" placeholder="Optional" />
-        </div>
+      <div class="summary-bar" style="margin-bottom:0;">
+        <div>Status<strong id="designApprovalStatusText">-</strong></div>
+        <div id="designApprovalDecisionWrap" style="display:none;">Approver<strong id="designApprovalDecisionText">-</strong></div>
       </div>
-      <p style="color:var(--muted); font-size:12px; margin:0;">Production cannot log actual consumption for this style until this is set to Approved.</p>
+      <div id="designApprovalRemarksWrap" style="display:none; margin-top:10px; font-size:13px; color:var(--muted);">
+        Remarks: <span id="designApprovalRemarksText"></span>
+      </div>
+      <div class="actions-row" style="margin-top:12px;">
+        <p style="color:var(--muted); font-size:12px; margin:0;">Production cannot log actual consumption until this is Approved.</p>
+        <button class="btn-primary" type="button" id="sendForApprovalBtn">Send for Approval</button>
+      </div>
     </section>
 
     <section class="panel" style="margin-top:16px;">
