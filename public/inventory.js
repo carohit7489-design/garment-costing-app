@@ -1,6 +1,5 @@
-const SIZES = ["40", "42", "44", "46", "48", "50", "52"];
-
 let currentStyle = null;
+let producedCombos = []; // [{color, size, balance}] - only combos production has actually logged
 
 const el = (id) => document.getElementById(id);
 
@@ -14,8 +13,6 @@ function toast(msg, isError) {
 function escapeAttr(s) {
   return String(s ?? "").replace(/"/g, "&quot;");
 }
-
-el("saleSize").innerHTML = SIZES.map((s) => `<option value="${s}">${s}</option>`).join("");
 
 async function loadStyleList(selectId) {
   const res = await fetch("/api/styles");
@@ -55,20 +52,51 @@ async function openStyle(id) {
   el("detailContent").style.display = "block";
   el("formTitle").textContent = `${s.styleNo} - ${s.styleName}`;
 
-  const colorNames = (s.colors || []).map((c) => c.name).filter(Boolean);
-  el("saleColor").innerHTML = colorNames.length
-    ? colorNames.map((c) => `<option value="${escapeAttr(c)}">${escapeAttr(c)}</option>`).join("")
-    : `<option value="">-</option>`;
+  // Only combinations production actually logged (produced > 0) - selling
+  // a size/color that was never produced is exactly the bug this fixes.
+  producedCombos = s.inventory.bySizeColor.filter((r) => r.produced > 0);
 
   el("saleQty").value = "";
   el("saleDate").value = new Date().toISOString().slice(0, 10);
   el("saleBuyer").value = "";
   el("saleReference").value = "";
 
+  renderSaleForm();
   renderInventory(s.inventory);
   renderSalesHistory(s.sales || []);
   loadStyleList(id);
 }
+
+function renderSaleForm() {
+  if (producedCombos.length === 0) {
+    el("saleForm").style.display = "none";
+    el("saleFormEmptyState").style.display = "block";
+    return;
+  }
+  el("saleForm").style.display = "block";
+  el("saleFormEmptyState").style.display = "none";
+
+  const colors = Array.from(new Set(producedCombos.map((r) => r.color)));
+  el("saleColor").innerHTML = colors.map((c) => `<option value="${escapeAttr(c)}">${escapeAttr(c || "-")}</option>`).join("");
+  populateSaleSizes();
+}
+
+function populateSaleSizes() {
+  const color = el("saleColor").value;
+  const sizesForColor = producedCombos.filter((r) => r.color === color);
+  el("saleSize").innerHTML = sizesForColor.map((r) => `<option value="${escapeAttr(r.size)}">${escapeAttr(r.size)}</option>`).join("");
+  updateAvailableHint();
+}
+
+function updateAvailableHint() {
+  const color = el("saleColor").value;
+  const size = el("saleSize").value;
+  const combo = producedCombos.find((r) => r.color === color && r.size === size);
+  el("saleAvailableHint").textContent = combo ? `(Available: ${combo.balance})` : "";
+}
+
+el("saleColor").addEventListener("change", populateSaleSizes);
+el("saleSize").addEventListener("change", updateAvailableHint);
 
 function renderInventory(inv) {
   el("sumProduced").textContent = inv.produced.toLocaleString();
@@ -124,13 +152,19 @@ async function recordSale() {
   const color = el("saleColor").value;
   const size = el("saleSize").value;
   const qtySold = Number(el("saleQty").value);
-  if (!color) {
-    toast("This style has no colors defined - add one on the Owner page first", true);
+  const combo = producedCombos.find((r) => r.color === color && r.size === size);
+  if (!combo) {
+    toast("No produced color/size to sell against", true);
     return;
   }
   if (!qtySold || qtySold <= 0) {
     toast("Enter a valid quantity sold", true);
     return;
+  }
+
+  if (qtySold > combo.balance) {
+    const proceed = confirm(`Only ${combo.balance} in stock for ${color || "-"} / ${size}. Record this sale of ${qtySold} anyway?`);
+    if (!proceed) return;
   }
 
   const payload = {

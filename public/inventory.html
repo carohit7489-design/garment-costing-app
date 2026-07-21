@@ -67,36 +67,41 @@
 
       <section class="panel" style="margin-top:16px;">
         <h2>Record a Sale</h2>
-        <div class="form-grid" style="grid-template-columns: repeat(3, 1fr);">
-          <div class="field">
-            <label>Color</label>
-            <select id="saleColor"></select>
+        <p style="color:var(--muted); font-size:12px; margin-top:0;">Color and Size only list combinations production has actually logged, so a sale always nets against real stock.</p>
+
+        <div id="saleForm">
+          <div class="form-grid" style="grid-template-columns: repeat(3, 1fr);">
+            <div class="field">
+              <label>Color</label>
+              <select id="saleColor"></select>
+            </div>
+            <div class="field">
+              <label>Size</label>
+              <select id="saleSize"></select>
+            </div>
+            <div class="field">
+              <label>Qty Sold <span id="saleAvailableHint" style="color:var(--muted); font-weight:normal;"></span></label>
+              <input id="saleQty" type="number" min="1" placeholder="e.g. 20" />
+            </div>
+            <div class="field">
+              <label>Date</label>
+              <input id="saleDate" type="date" />
+            </div>
+            <div class="field">
+              <label>Buyer / Customer</label>
+              <input id="saleBuyer" placeholder="Optional" />
+            </div>
+            <div class="field">
+              <label>Reference / Invoice No.</label>
+              <input id="saleReference" placeholder="Optional" />
+            </div>
           </div>
-          <div class="field">
-            <label>Size</label>
-            <select id="saleSize"></select>
-          </div>
-          <div class="field">
-            <label>Qty Sold</label>
-            <input id="saleQty" type="number" min="1" placeholder="e.g. 20" />
-          </div>
-          <div class="field">
-            <label>Date</label>
-            <input id="saleDate" type="date" />
-          </div>
-          <div class="field">
-            <label>Buyer / Customer</label>
-            <input id="saleBuyer" placeholder="Optional" />
-          </div>
-          <div class="field">
-            <label>Reference / Invoice No.</label>
-            <input id="saleReference" placeholder="Optional" />
+          <div class="actions-row">
+            <div id="statusText" style="color:#64748b; font-size:12px;"></div>
+            <button class="btn-primary" type="button" id="recordSaleBtn">Record Sale</button>
           </div>
         </div>
-        <div class="actions-row">
-          <div id="statusText" style="color:#64748b; font-size:12px;"></div>
-          <button class="btn-primary" type="button" id="recordSaleBtn">Record Sale</button>
-        </div>
+        <div id="saleFormEmptyState" class="empty-state" style="display:none;">No production logged yet for this style - nothing to sell until production records actual consumption.</div>
       </section>
 
       <section class="panel" style="margin-top:16px;">

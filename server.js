@@ -695,7 +695,7 @@ app.post("/api/styles/:id/sales", requireOwnerAuth, (req, res) => {
   if (idx === -1) return res.status(404).json({ error: "Style not found" });
 
   const body = req.body;
-  if (!body.color || !SIZES.includes(body.size) || !(Number(body.qtySold) > 0)) {
+  if (body.color === undefined || !SIZES.includes(body.size) || !(Number(body.qtySold) > 0)) {
     return res.status(400).json({ error: "color, size, and a positive qtySold are required" });
   }
 
