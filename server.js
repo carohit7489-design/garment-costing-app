@@ -329,7 +329,41 @@ function migrateStyle(style) {
     parts,
     designApproval: parseApproval(style.designApproval, defaultApproval("Not Sent"), DESIGN_APPROVAL_STATUSES),
     varianceApproval: parseApproval(style.varianceApproval, defaultApproval("Pending"), VARIANCE_APPROVAL_STATUSES),
+    sales: Array.isArray(style.sales) ? style.sales : [],
   };
+}
+
+// Inventory = produced (from production's actuals) minus sold (from sales),
+// broken down by color + size to match how both are already logged.
+function computeInventory(style) {
+  const key = (color, size) => `${color || ""}|||${size || ""}`;
+  const produced = new Map();
+  const sold = new Map();
+
+  (style.actuals || []).forEach((entry) => {
+    const k = key(entry.color, entry.size);
+    produced.set(k, (produced.get(k) || 0) + (Number(entry.actualProducedQty) || 0));
+  });
+  (style.sales || []).forEach((entry) => {
+    const k = key(entry.color, entry.size);
+    sold.set(k, (sold.get(k) || 0) + (Number(entry.qtySold) || 0));
+  });
+
+  const keys = new Set([...produced.keys(), ...sold.keys()]);
+  const bySizeColor = Array.from(keys).map((k) => {
+    const [color, size] = k.split("|||");
+    const p = produced.get(k) || 0;
+    const s = sold.get(k) || 0;
+    return { color, size, produced: p, sold: s, balance: p - s };
+  });
+  bySizeColor.sort((a, b) => a.color.localeCompare(b.color) || SIZES.indexOf(a.size) - SIZES.indexOf(b.size));
+
+  const totals = bySizeColor.reduce(
+    (acc, r) => ({ produced: acc.produced + r.produced, sold: acc.sold + r.sold, balance: acc.balance + r.balance }),
+    { produced: 0, sold: 0, balance: 0 }
+  );
+
+  return { bySizeColor, ...totals };
 }
 
 function readStyles() {
@@ -371,6 +405,7 @@ app.get("/api/styles", (req, res) => {
     componentCount: partComponentCount(s),
     actualsCount: (s.actuals || []).length,
     designApprovalStatus: s.designApproval.status,
+    inventoryBalance: computeInventory(s).balance,
   }));
   res.json(summary);
 });
@@ -381,7 +416,7 @@ app.get("/api/styles/:id", requireOwnerOrApproverAuth, (req, res) => {
   const styles = readStyles();
   const style = styles.find((s) => s.id === req.params.id);
   if (!style) return res.status(404).json({ error: "Style not found" });
-  res.json(style);
+  res.json({ ...style, inventory: computeInventory(style) });
 });
 
 // Production-facing view of a style: component list without rate/vendor/bill
@@ -534,6 +569,7 @@ app.post("/api/styles", requireOwnerAuth, upload.single("designImage"), (req, re
     parts: parseParts(body.parts),
     designImagePath: req.file ? `/uploads/${req.file.filename}` : null,
     actuals: [],
+    sales: [],
     designApproval: parseApproval(body.designApproval, defaultApproval("Not Sent"), DESIGN_APPROVAL_STATUSES),
     varianceApproval: parseApproval(body.varianceApproval, defaultApproval("Pending"), VARIANCE_APPROVAL_STATUSES),
     createdAt: now,
@@ -644,6 +680,37 @@ app.post("/api/styles/:id/actuals", (req, res) => {
   };
   styles[idx].actuals = styles[idx].actuals || [];
   styles[idx].actuals.push(entry);
+  styles[idx].updatedAt = new Date().toISOString();
+  writeStyles(styles);
+  res.status(201).json(entry);
+});
+
+// ---- Sales (inventory dashboard) ----
+// Owner-only: recording a sale reduces the available balance for that
+// color+size, alongside whatever production has logged as produced.
+
+app.post("/api/styles/:id/sales", requireOwnerAuth, (req, res) => {
+  const styles = readStyles();
+  const idx = styles.findIndex((s) => s.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: "Style not found" });
+
+  const body = req.body;
+  if (!body.color || !SIZES.includes(body.size) || !(Number(body.qtySold) > 0)) {
+    return res.status(400).json({ error: "color, size, and a positive qtySold are required" });
+  }
+
+  const entry = {
+    id: crypto.randomUUID(),
+    color: body.color,
+    size: body.size,
+    qtySold: Number(body.qtySold),
+    date: body.date || new Date().toISOString().slice(0, 10),
+    buyer: body.buyer || "",
+    reference: body.reference || "",
+    createdAt: new Date().toISOString(),
+  };
+  styles[idx].sales = styles[idx].sales || [];
+  styles[idx].sales.push(entry);
   styles[idx].updatedAt = new Date().toISOString();
   writeStyles(styles);
   res.status(201).json(entry);

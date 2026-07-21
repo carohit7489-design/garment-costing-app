@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Inventory Dashboard</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<header class="top">
+  <h1>Garment Costing Module</h1>
+  <nav>
+    <a href="owner.html">Owner - Design &amp; Costing</a>
+    <a href="production.html">Production - Actual Consumption</a>
+    <a href="approver.html">Approver Review</a>
+    <a href="inventory.html" class="active">Inventory Dashboard</a>
+    <a href="#" id="logoutLink" style="display:none;">Log out</a>
+  </nav>
+</header>
+
+<div class="login-overlay" id="loginOverlay">
+  <div class="login-box">
+    <h2>Owner Login</h2>
+    <p style="color:var(--muted); font-size:13px; margin-top:0;">Inventory balances are derived from costing/production data. Enter the owner password to continue.</p>
+    <input id="loginPassword" type="password" placeholder="Password" autocomplete="current-password" />
+    <button class="btn-primary" id="loginBtn" style="width:100%; margin-top:10px;">Login</button>
+    <div id="loginError" class="login-error"></div>
+  </div>
+</div>
+
+<main id="appMain" style="display:none;">
+  <section class="panel">
+    <h2>Styles</h2>
+    <ul class="style-list" id="styleList"></ul>
+  </section>
+
+  <section class="panel" id="detailPanel">
+    <div class="empty-state" id="emptyState">Select a style on the left to view its inventory.</div>
+
+    <div id="detailContent" style="display:none;">
+      <h2 id="formTitle">Style</h2>
+
+      <div class="summary-bar">
+        <div>Total Produced<strong id="sumProduced">-</strong></div>
+        <div>Total Sold<strong id="sumSold">-</strong></div>
+        <div>Balance in Hand<strong id="sumBalance">-</strong></div>
+      </div>
+
+      <section class="panel" style="margin-top:16px;">
+        <h2>Inventory Balance by Color &amp; Size</h2>
+        <div class="table-scroll">
+          <table class="comp-table" id="inventoryTable">
+            <thead>
+              <tr>
+                <th style="text-align:left;">Color</th>
+                <th>Size</th>
+                <th>Produced</th>
+                <th>Sold</th>
+                <th>Balance</th>
+              </tr>
+            </thead>
+            <tbody id="inventoryBody"></tbody>
+          </table>
+        </div>
+        <div id="inventoryEmptyState" class="empty-state" style="display:none;">No production logged for this style yet.</div>
+      </section>
+
+      <section class="panel" style="margin-top:16px;">
+        <h2>Record a Sale</h2>
+        <div class="form-grid" style="grid-template-columns: repeat(3, 1fr);">
+          <div class="field">
+            <label>Color</label>
+            <select id="saleColor"></select>
+          </div>
+          <div class="field">
+            <label>Size</label>
+            <select id="saleSize"></select>
+          </div>
+          <div class="field">
+            <label>Qty Sold</label>
+            <input id="saleQty" type="number" min="1" placeholder="e.g. 20" />
+          </div>
+          <div class="field">
+            <label>Date</label>
+            <input id="saleDate" type="date" />
+          </div>
+          <div class="field">
+            <label>Buyer / Customer</label>
+            <input id="saleBuyer" placeholder="Optional" />
+          </div>
+          <div class="field">
+            <label>Reference / Invoice No.</label>
+            <input id="saleReference" placeholder="Optional" />
+          </div>
+        </div>
+        <div class="actions-row">
+          <div id="statusText" style="color:#64748b; font-size:12px;"></div>
+          <button class="btn-primary" type="button" id="recordSaleBtn">Record Sale</button>
+        </div>
+      </section>
+
+      <section class="panel" style="margin-top:16px;">
+        <h2>Sales History</h2>
+        <div id="salesHistoryList" class="history-list"></div>
+      </section>
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="inventory.js"></script>
+</body>
+</html>
