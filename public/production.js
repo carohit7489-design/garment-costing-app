@@ -166,22 +166,24 @@ function renderPartActualTable(partKey) {
     })
     .join("");
   return `
-    <table class="comp-table">
-      <thead>
-        <tr>
-          <th style="width:90px;">Type</th>
-          <th>Description</th>
-          <th style="width:60px;">UOM</th>
-          <th style="width:100px;">Est. Consumption</th>
-          <th style="width:130px;">Actual Consumption</th>
-          <th style="width:80px;">Variance</th>
-          <th style="width:110px;">Vendor</th>
-          <th style="width:100px;">Bill No.</th>
-          <th style="width:70px;">Received</th>
-        </tr>
-      </thead>
-      <tbody>${rows}</tbody>
-    </table>
+    <div class="table-scroll">
+      <table class="comp-table">
+        <thead>
+          <tr>
+            <th style="width:90px;">Type</th>
+            <th style="min-width:140px;">Description</th>
+            <th style="width:60px;">UOM</th>
+            <th style="width:100px;">Est. Consumption</th>
+            <th style="width:130px;">Actual Consumption</th>
+            <th style="width:80px;">Variance</th>
+            <th style="width:120px;">Vendor</th>
+            <th style="width:100px;">Bill No.</th>
+            <th style="width:70px;">Received</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
   `;
 }
 

@@ -178,22 +178,24 @@ function renderParts() {
 function renderPartTable(partKey) {
   const rows = parts[partKey].components.map((row, idx) => renderComponentRow(partKey, row, idx)).join("");
   return `
-    <table class="comp-table">
-      <thead>
-        <tr>
-          <th style="width:90px;">Type</th>
-          <th>Description</th>
-          <th style="width:70px;">UOM</th>
-          <th style="width:80px;">Rate</th>
-          <th style="width:290px;">Consumption (Average)</th>
-          <th style="width:110px;">Vendor</th>
-          <th style="width:100px;">Bill No.</th>
-          <th style="width:60px;">Received</th>
-          <th style="width:36px;"></th>
-        </tr>
-      </thead>
-      <tbody>${rows}</tbody>
-    </table>
+    <div class="table-scroll">
+      <table class="comp-table">
+        <thead>
+          <tr>
+            <th style="width:90px;">Type</th>
+            <th style="min-width:160px;">Description</th>
+            <th style="width:70px;">UOM</th>
+            <th style="width:80px;">Rate</th>
+            <th style="width:280px;">Consumption (Average)</th>
+            <th style="width:120px;">Vendor</th>
+            <th style="width:100px;">Bill No.</th>
+            <th style="width:70px;">Received</th>
+            <th style="width:36px;"></th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
     <button class="btn-secondary" type="button" data-action="add-row" data-part="${partKey}">+ Add Row</button>
   `;
 }

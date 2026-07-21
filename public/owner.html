@@ -90,11 +90,13 @@
 
     <section class="panel" style="margin-top:16px;">
       <h2>Order Quantity by Color &amp; Size</h2>
-      <table class="comp-table" id="colorSizeTable">
-        <thead><tr id="colorSizeHead"></tr></thead>
-        <tbody id="colorSizeBody"></tbody>
-        <tfoot><tr id="colorSizeFoot"></tr></tfoot>
-      </table>
+      <div class="table-scroll">
+        <table class="comp-table" id="colorSizeTable">
+          <thead><tr id="colorSizeHead"></tr></thead>
+          <tbody id="colorSizeBody"></tbody>
+          <tfoot><tr id="colorSizeFoot"></tr></tfoot>
+        </table>
+      </div>
       <button class="btn-secondary" type="button" id="addColorBtn">+ Add Color</button>
     </section>
 
@@ -102,10 +104,12 @@
 
     <section class="panel" style="margin-top:16px;">
       <h2>Cost Summary by Size</h2>
-      <table class="comp-table" id="costSummaryTable">
-        <thead><tr id="costSummaryHead"></tr></thead>
-        <tbody id="costSummaryBody"></tbody>
-      </table>
+      <div class="table-scroll">
+        <table class="comp-table" id="costSummaryTable">
+          <thead><tr id="costSummaryHead"></tr></thead>
+          <tbody id="costSummaryBody"></tbody>
+        </table>
+      </div>
       <div class="summary-bar" style="margin-top:12px;">
         <div>Total Order Qty (all colors/sizes)<strong id="sumOrderQty">-</strong></div>
         <div>Total Selling Value<strong id="sumSellingValue">-</strong></div>
