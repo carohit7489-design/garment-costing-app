@@ -49,10 +49,8 @@ async function loadStyleList(selectId) {
     });
 }
 
-function estConsumptionFor(component, size) {
-  return component.type === "Fabric"
-    ? Number(component.sizeConsumption?.[size]) || 0
-    : Number(component.consumption) || 0;
+function estConsumptionFor(component) {
+  return Number(component.consumption) || 0;
 }
 
 // Costing is done per single piece; production works in whole batches, so
@@ -71,7 +69,7 @@ function buildActualLines() {
     actualData[key] = !part.enabled
       ? []
       : part.components.map((c) => {
-          const estPerPiece = estConsumptionFor(c, selectedSize);
+          const estPerPiece = estConsumptionFor(c);
           return {
             index: c.index,
             type: c.type,
@@ -122,17 +120,12 @@ function ratioFabricRow() {
   return part ? part.components.find((c) => c.type === "Fabric") || null : null;
 }
 
-function averageConsumption(fabricRow, sizes) {
-  const vals = sizes.map((s) => Number(fabricRow.sizeConsumption?.[s]) || 0).filter((v) => v > 0);
-  return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
-}
-
-// Suggests a starting average (blended across all sizes) whenever the
-// selected part/fabric changes - the field stays editable afterward, since
-// real cutting-room average consumption may differ from the costing sheet.
+// Suggests a starting average from the costing sheet whenever the selected
+// part/fabric changes - the field stays editable afterward, since real
+// cutting-room average consumption may differ from the costing sheet.
 function updateRatioAvgDefault() {
   const fabricRow = ratioFabricRow();
-  el("ratioAvgConsumption").value = fabricRow ? averageConsumption(fabricRow, SIZES).toFixed(2) : "";
+  el("ratioAvgConsumption").value = fabricRow ? (Number(fabricRow.consumption) || 0).toFixed(2) : "";
   renderRatioPlanning();
 }
 
@@ -168,15 +161,13 @@ function renderRatioPlanning() {
 
   el("ratioBody").innerHTML = `
     <tr>
-      <td style="text-align:left;">Category A</td>
-      <td>40-42-44-46</td>
+      <td style="text-align:left;">40-42-44-46</td>
       <td>${pctA.toFixed(0)}%</td>
       <td style="font-weight:bold;">${piecesA}</td>
       <td>${fabricUsedA.toFixed(2)} ${uom}</td>
     </tr>
     <tr>
-      <td style="text-align:left;">Category B</td>
-      <td>48-50-52</td>
+      <td style="text-align:left;">48-50-52</td>
       <td>${pctB.toFixed(0)}%</td>
       <td style="font-weight:bold;">${piecesB}</td>
       <td>${fabricUsedB.toFixed(2)} ${uom}</td>
@@ -184,7 +175,6 @@ function renderRatioPlanning() {
   `;
   el("ratioFoot").innerHTML = `
     <td style="text-align:left;">Total</td>
-    <td></td>
     <td>100%</td>
     <td>${totalPieces}</td>
     <td>${totalFabricUsed.toFixed(2)} ${uom}</td>

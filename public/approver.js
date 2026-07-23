@@ -17,20 +17,18 @@ function escapeAttr(s) {
   return String(s ?? "").replace(/"/g, "&quot;");
 }
 
-function costOfRowAtSize(row, size) {
-  const rate = Number(row.rate) || 0;
-  const cons = row.type === "Fabric" ? Number(row.sizeConsumption?.[size]) || 0 : Number(row.consumption) || 0;
-  return cons * rate;
+function costOfRow(row) {
+  return (Number(row.consumption) || 0) * (Number(row.rate) || 0);
 }
 
-function partCostAtSize(style, partKey, size) {
+function partCost(style, partKey) {
   const part = style.parts[partKey];
   if (!part.enabled) return 0;
-  return part.components.reduce((sum, r) => sum + costOfRowAtSize(r, size), 0);
+  return part.components.reduce((sum, r) => sum + costOfRow(r), 0);
 }
 
-function grandCostAtSize(style, size) {
-  return PART_KEYS.reduce((sum, k) => sum + partCostAtSize(style, k, size), 0);
+function grandCost(style) {
+  return PART_KEYS.reduce((sum, k) => sum + partCost(style, k), 0);
 }
 
 function totalSellingRate(style) {
@@ -137,24 +135,20 @@ function renderParts(s) {
     .map((key) => {
       const part = s.parts[key];
       const rows = part.components
-        .map((row) => {
-          const isFabric = row.type === "Fabric";
-          const consumptionText = isFabric
-            ? SIZES.map((sz) => `${sz}:${row.sizeConsumption[sz]}`).join(" ")
-            : String(row.consumption);
-          return `
+        .map(
+          (row) => `
             <tr>
               <td>${escapeAttr(row.type)}</td>
               <td>${escapeAttr(row.description)}</td>
               <td>${escapeAttr(row.uom)}</td>
               <td>${row.rate}</td>
-              <td style="white-space:nowrap;">${consumptionText}</td>
+              <td>${row.consumption}</td>
               <td>${escapeAttr(row.vendor || "-")}</td>
               <td>${escapeAttr(row.billNo || "-")}</td>
               <td>${row.received ? "Yes" : "-"}</td>
             </tr>
-          `;
-        })
+          `
+        )
         .join("");
       return `
         <div class="part-block">
@@ -176,35 +170,23 @@ function renderParts(s) {
 }
 
 function renderCostSummary(s) {
-  el("costSummaryHead").innerHTML = `<th style="text-align:left;">Part</th>` + SIZES.map((sz) => `<th>${sz}</th>`).join("");
+  el("costSummaryHead").innerHTML = `<th style="text-align:left;">Part</th><th>Cost / Garment</th>`;
   const currency = s.currency || "";
   let rows = "";
   PART_KEYS.forEach((key) => {
     if (!s.parts[key].enabled) return;
-    rows +=
-      `<tr><td style="text-align:left;">${PART_LABELS[key]}</td>` +
-      SIZES.map((sz) => `<td class="cost-cell">${partCostAtSize(s, key, sz).toFixed(2)}</td>`).join("") +
-      `</tr>`;
+    rows += `<tr><td style="text-align:left;">${PART_LABELS[key]}</td><td class="cost-cell">${partCost(s, key).toFixed(2)}</td></tr>`;
   });
-  rows +=
-    `<tr style="font-weight:bold; border-top:2px solid var(--navy);"><td style="text-align:left;">Total Cost / Garment</td>` +
-    SIZES.map((sz) => `<td class="cost-cell">${currency} ${grandCostAtSize(s, sz).toFixed(2)}</td>`).join("") +
-    `</tr>`;
+  const cost = grandCost(s);
   const selling = totalSellingRate(s);
-  rows +=
-    `<tr><td style="text-align:left;">Selling Rate / Garment</td>` +
-    SIZES.map(() => `<td class="cost-cell">${currency} ${selling.toFixed(2)}</td>`).join("") +
-    `</tr>`;
-  rows +=
-    `<tr><td style="text-align:left;">Margin / Garment</td>` +
-    SIZES.map((sz) => `<td class="cost-cell">${currency} ${(selling - grandCostAtSize(s, sz)).toFixed(2)}</td>`).join("") +
-    `</tr>`;
+  rows += `<tr style="font-weight:bold; border-top:2px solid var(--navy);"><td style="text-align:left;">Total Cost / Garment</td><td class="cost-cell">${currency} ${cost.toFixed(2)}</td></tr>`;
+  rows += `<tr><td style="text-align:left;">Selling Rate / Garment</td><td class="cost-cell">${currency} ${selling.toFixed(2)}</td></tr>`;
+  rows += `<tr><td style="text-align:left;">Margin / Garment</td><td class="cost-cell">${currency} ${(selling - cost).toFixed(2)}</td></tr>`;
   el("costSummaryBody").innerHTML = rows;
 
   const qty = totalPcs(s);
   el("sumOrderQty").textContent = qty ? qty.toLocaleString() : "-";
-  const sizeTotals = Object.fromEntries(SIZES.map((sz) => [sz, (s.colors || []).reduce((sum, c) => sum + (Number(c.qty[sz]) || 0), 0)]));
-  const totalCostValue = SIZES.reduce((sum, sz) => sum + grandCostAtSize(s, sz) * sizeTotals[sz], 0);
+  const totalCostValue = cost * qty;
   const totalSellingValue = selling * qty;
   el("sumCostValue").textContent = qty ? `${currency} ${totalCostValue.toFixed(2)}` : "-";
   el("sumSellingValue").textContent = qty ? `${currency} ${totalSellingValue.toFixed(2)}` : "-";

@@ -208,7 +208,7 @@ function parseApproval(raw, existing, validStatuses) {
 }
 
 function defaultFabricRow() {
-  return { type: "Fabric", description: "Fabric", uom: "Mtr", rate: 0, sizeConsumption: defaultSizeQty() };
+  return { type: "Fabric", description: "Fabric", uom: "Mtr", rate: 0, consumption: 0 };
 }
 
 function defaultProcessRow(name) {
@@ -221,19 +221,33 @@ function defaultFixedComponents() {
 
 // Reconciles a part's stored components against the fixed line-item list -
 // values entered against a matching name carry over; anything that doesn't
-// match a fixed name folds into the "Other" slot so nothing is silently lost.
+// match a fixed name folds into the "Other" slot. Rows explicitly marked
+// `custom` are the owner's own added line items (via "Add Line Item") and
+// are preserved as-is, in order, after the fixed set - never dropped.
 function reconcileFixedComponents(existing) {
   let fabricRow = null;
   const byName = new Map();
-  const leftovers = [];
+  let otherSource = null;
+  const customRows = [];
   for (const c of existing) {
+    if (c.custom) {
+      customRows.push(c);
+      continue;
+    }
     if (c.type === "Fabric") {
       if (!fabricRow) fabricRow = c;
       continue;
     }
     const match = FIXED_PROCESS_NAMES.find((n) => n.toLowerCase() === String(c.description || "").trim().toLowerCase());
-    if (match && !byName.has(match)) byName.set(match, c);
-    else leftovers.push(c);
+    if (match && !byName.has(match)) {
+      byName.set(match, c);
+    } else if (!otherSource) {
+      otherSource = c;
+    } else {
+      // Shouldn't normally happen (the client always tags extras as custom),
+      // but preserve rather than silently discard.
+      customRows.push({ ...c, custom: true });
+    }
   }
 
   const fabric = fabricRow ? { ...defaultFabricRow(), ...fabricRow, type: "Fabric" } : defaultFabricRow();
@@ -241,12 +255,12 @@ function reconcileFixedComponents(existing) {
     const row = byName.get(name);
     return row ? { ...defaultProcessRow(name), ...row, description: name } : defaultProcessRow(name);
   });
-  const otherSource = leftovers[0];
   const otherRow = otherSource
     ? { ...defaultProcessRow(otherSource.description || "Other"), ...otherSource }
     : defaultProcessRow("Other");
+  const customRowsOut = customRows.map((c) => ({ ...defaultProcessRow(c.description || ""), ...c, custom: true }));
 
-  return [fabric, ...processRows, otherRow];
+  return [fabric, ...processRows, otherRow, ...customRowsOut];
 }
 
 function defaultPart() {
@@ -264,22 +278,39 @@ function styleTotalPcs(style) {
 // Upgrades a component to the current Fabric/Process shape without
 // discarding any value already entered.
 function migrateComponent(c) {
-  if (c.type === "Fabric" || c.type === "Process") return c;
+  if (c.type === "Fabric") {
+    // Older records graded fabric consumption per size; a single average is
+    // now the source of truth, so collapse whatever was there into one figure.
+    let consumption;
+    if (c.consumption !== undefined) {
+      consumption = Number(c.consumption) || 0;
+    } else if (c.sizeConsumption) {
+      const values = Object.values(c.sizeConsumption).map(Number).filter((v) => !isNaN(v) && v > 0);
+      consumption = values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0;
+    } else {
+      consumption = 0;
+    }
+    return {
+      type: "Fabric",
+      description: c.description || "Fabric",
+      uom: c.uom || "Mtr",
+      rate: Number(c.rate) || 0,
+      consumption,
+      ...(c.custom ? { custom: true } : {}),
+    };
+  }
+  if (c.type === "Process") return c;
 
   // Pre-parts-rewrite shape used category: "Fabric"/"Trim"/"CM"/"Overhead"/"Other".
   if (c.category === "Fabric") {
-    let sizeConsumption;
+    let consumption;
     if (c.sizeConsumption) {
-      // Old size set was 38/40/42/44/Plus; carry a representative flat value
-      // across the new 7-size set rather than guess a distribution.
       const values = Object.values(c.sizeConsumption).map(Number).filter((v) => !isNaN(v) && v > 0);
-      const v = values[0] || 0;
-      sizeConsumption = Object.fromEntries(SIZES.map((s) => [s, v]));
+      consumption = values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0;
     } else {
-      const v = Number(c.consumption) || 0;
-      sizeConsumption = Object.fromEntries(SIZES.map((s) => [s, v]));
+      consumption = Number(c.consumption) || 0;
     }
-    return { type: "Fabric", description: c.description || "", uom: c.uom || "Mtr", rate: Number(c.rate) || 0, sizeConsumption };
+    return { type: "Fabric", description: c.description || "", uom: c.uom || "Mtr", rate: Number(c.rate) || 0, consumption };
   }
   return {
     type: "Process",
@@ -290,6 +321,7 @@ function migrateComponent(c) {
     vendor: c.vendor || "",
     billNo: c.billNo || "",
     received: !!c.received,
+    ...(c.custom ? { custom: true } : {}),
   };
 }
 
@@ -450,10 +482,7 @@ app.get("/api/styles/:id/production-view", (req, res) => {
     // have to fill in "Adda Work" for a style that never used it.
     const components = [];
     part.components.forEach((c, index) => {
-      const isActive =
-        c.type === "Fabric"
-          ? Number(c.rate) > 0 || Object.values(c.sizeConsumption || {}).some((v) => Number(v) > 0)
-          : Number(c.rate) > 0;
+      const isActive = Number(c.rate) > 0 || Number(c.consumption) > 0;
       if (!isActive) return;
       components.push({
         index,
@@ -461,7 +490,6 @@ app.get("/api/styles/:id/production-view", (req, res) => {
         description: c.description,
         uom: c.uom,
         consumption: c.consumption,
-        sizeConsumption: c.sizeConsumption,
         // Vendor/Bill No./Received are job-work tracking, not pricing -
         // safe to expose and let production update, unlike rate.
         vendor: c.type === "Process" ? c.vendor : undefined,

@@ -40,7 +40,7 @@
 
       <section class="panel" style="margin-top:16px;">
         <h2>Fabric Cut Planning (Size Ratio)</h2>
-        <p style="color:var(--muted); font-size:12px; margin-top:0;">Total pieces = Total Fabric &divide; Average Consumption per Piece. Those pieces then split Category A (sizes 40/42/44/46) / Category B (48/50/52) by the share below.</p>
+        <p style="color:var(--muted); font-size:12px; margin-top:0;">Total pieces = Total Fabric &divide; Average Consumption per Piece. Those pieces then split across sizes 40/42/44/46 / 48/50/52 by the share below.</p>
         <div class="form-grid" style="grid-template-columns: repeat(4, 1fr);">
           <div class="field">
             <label>Part / Fabric</label>
@@ -55,7 +55,7 @@
             <input id="ratioAvgConsumption" type="number" min="0" step="0.01" placeholder="e.g. 6" />
           </div>
           <div class="field">
-            <label>Category A Share %</label>
+            <label>40-42-44-46 Share %</label>
             <input id="ratioPctA" type="number" min="0" max="100" step="1" value="75" />
           </div>
         </div>
@@ -68,8 +68,7 @@
           <table class="comp-table" id="ratioTable">
             <thead>
               <tr>
-                <th style="text-align:left;">Category</th>
-                <th>Sizes</th>
+                <th style="text-align:left;">Sizes</th>
                 <th>Share %</th>
                 <th>Est. Pieces</th>
                 <th>Fabric Used</th>

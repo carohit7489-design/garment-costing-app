@@ -1,3 +1,5 @@
+const RATIO_CATEGORY_SIZES = { A: ["40", "42", "44", "46"], B: ["48", "50", "52"] };
+
 let currentStyle = null;
 let producedCombos = []; // [{color, category, sizes, balance}] - only combos production has actually logged
 
@@ -85,7 +87,7 @@ function populateSaleCategories() {
   const color = el("saleColor").value;
   const categoriesForColor = producedCombos.filter((r) => r.color === color);
   el("saleCategory").innerHTML = categoriesForColor
-    .map((r) => `<option value="${escapeAttr(r.category)}">Category ${escapeAttr(r.category)} (${r.sizes.join("-")})</option>`)
+    .map((r) => `<option value="${escapeAttr(r.category)}">${r.sizes.join("-")}</option>`)
     .join("");
   updateAvailableHint();
 }
@@ -119,7 +121,6 @@ function renderInventory(inv) {
       return `
         <tr>
           <td style="text-align:left;">${escapeAttr(r.color || "-")}</td>
-          <td>${escapeAttr(r.category)}</td>
           <td>${r.sizes.join("-")}</td>
           <td>${r.produced}</td>
           <td>${r.sold}</td>
@@ -142,7 +143,7 @@ function renderSalesHistory(sales) {
     .map(
       (s) => `
         <div class="hist-item">
-          <strong>${escapeAttr(s.date)}</strong> · ${escapeAttr(s.color)} / Category ${escapeAttr(s.category || "-")} · Sold ${s.qtySold} pcs
+          <strong>${escapeAttr(s.date)}</strong> · ${escapeAttr(s.color)} / ${escapeAttr((RATIO_CATEGORY_SIZES[s.category] || []).join("-") || "-")} · Sold ${s.qtySold} pcs
           ${s.buyer ? ` · ${escapeAttr(s.buyer)}` : ""}${s.reference ? ` · Ref: ${escapeAttr(s.reference)}` : ""}
         </div>
       `
@@ -157,7 +158,7 @@ async function recordSale() {
   const qtySold = Number(el("saleQty").value);
   const combo = producedCombos.find((r) => r.color === color && r.category === category);
   if (!combo) {
-    toast("No produced color/category to sell against", true);
+    toast("No produced color/size group to sell against", true);
     return;
   }
   if (!qtySold || qtySold <= 0) {
@@ -166,7 +167,7 @@ async function recordSale() {
   }
 
   if (qtySold > combo.balance) {
-    const proceed = confirm(`Only ${combo.balance} in stock for ${color || "-"} / Category ${category}. Record this sale of ${qtySold} anyway?`);
+    const proceed = confirm(`Only ${combo.balance} in stock for ${color || "-"} / ${combo.sizes.join("-")}. Record this sale of ${qtySold} anyway?`);
     if (!proceed) return;
   }
 

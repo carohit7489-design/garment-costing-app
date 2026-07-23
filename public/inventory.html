@@ -47,14 +47,13 @@
       </div>
 
       <section class="panel" style="margin-top:16px;">
-        <h2>Inventory Balance by Color &amp; Category</h2>
-        <p style="color:var(--muted); font-size:12px; margin-top:0;">Category A = sizes 40/42/44/46, Category B = sizes 48/50/52 (matches the cut-planning ratio on the Production page).</p>
+        <h2>Inventory Balance by Color &amp; Sizes</h2>
+        <p style="color:var(--muted); font-size:12px; margin-top:0;">Sales are pooled across the size group 40/42/44/46 or 48/50/52 (matches the cut-planning ratio on the Production page).</p>
         <div class="table-scroll">
           <table class="comp-table" id="inventoryTable">
             <thead>
               <tr>
                 <th style="text-align:left;">Color</th>
-                <th>Category</th>
                 <th>Sizes</th>
                 <th>Produced</th>
                 <th>Sold</th>
@@ -69,7 +68,7 @@
 
       <section class="panel" style="margin-top:16px;">
         <h2>Record a Sale</h2>
-        <p style="color:var(--muted); font-size:12px; margin-top:0;">Sales are recorded against a Color + Category (A/B), pooled across that category's sizes - not an exact size. Only combinations production has actually logged appear here.</p>
+        <p style="color:var(--muted); font-size:12px; margin-top:0;">Sales are recorded against a Color + size group (40-42-44-46 or 48-50-52), pooled across that group's sizes - not an exact size. Only combinations production has actually logged appear here.</p>
 
         <div id="saleForm">
           <div class="form-grid" style="grid-template-columns: repeat(3, 1fr);">
@@ -78,7 +77,7 @@
               <select id="saleColor"></select>
             </div>
             <div class="field">
-              <label>Category</label>
+              <label>Sizes</label>
               <select id="saleCategory"></select>
             </div>
             <div class="field">

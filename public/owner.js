@@ -52,7 +52,11 @@ function defaultColor() {
 }
 
 function defaultFabricRow() {
-  return { type: "Fabric", description: "Fabric", uom: "Mtr", rate: 0, sizeConsumption: defaultSizeQty() };
+  return { type: "Fabric", description: "Fabric", uom: "Mtr", rate: 0, consumption: 0 };
+}
+
+function defaultCustomRow() {
+  return { type: "Process", description: "", uom: "Pcs", rate: 0, consumption: 0, vendor: "", billNo: "", received: false, custom: true };
 }
 
 function defaultProcessRow(name) {
@@ -72,25 +76,17 @@ function defaultParts() {
 }
 
 function costOfRow(row) {
-  const rate = Number(row.rate) || 0;
-  if (row.type === "Fabric") return null; // varies by size, handled separately
-  return (Number(row.consumption) || 0) * rate;
+  return (Number(row.consumption) || 0) * (Number(row.rate) || 0);
 }
 
-function costOfRowAtSize(row, size) {
-  const rate = Number(row.rate) || 0;
-  const cons = row.type === "Fabric" ? Number(row.sizeConsumption?.[size]) || 0 : Number(row.consumption) || 0;
-  return cons * rate;
-}
-
-function partCostAtSize(partKey, size) {
+function partCost(partKey) {
   const part = parts[partKey];
   if (!part.enabled) return 0;
-  return part.components.reduce((sum, r) => sum + costOfRowAtSize(r, size), 0);
+  return part.components.reduce((sum, r) => sum + costOfRow(r), 0);
 }
 
-function grandCostAtSize(size) {
-  return PART_KEYS.reduce((sum, k) => sum + partCostAtSize(k, size), 0);
+function grandCost() {
+  return PART_KEYS.reduce((sum, k) => sum + partCost(k), 0);
 }
 
 function totalSellingRate() {
@@ -199,30 +195,24 @@ function renderPartTable(partKey) {
             <th style="min-width:180px;">Line Item</th>
             <th style="width:70px;">UOM</th>
             <th style="width:80px;">Rate</th>
-            <th style="width:280px;">Consumption (Average)</th>
+            <th style="width:110px;">Avg Consumption</th>
             <th style="width:120px;">Vendor</th>
             <th style="width:100px;">Bill No.</th>
             <th style="width:70px;">Received</th>
+            <th style="width:36px;"></th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
       </table>
     </div>
+    <button class="btn-small" type="button" data-action="add-line-item" data-part="${partKey}" style="margin-top:8px;">+ Add Line Item</button>
   `;
 }
 
 function renderComponentRow(partKey, row, idx) {
   const isFabric = row.type === "Fabric";
-  const isOther = idx === FIXED_PROCESS_NAMES.length + 1; // last row
-  const consumptionCell = isFabric
-    ? `<div class="size-inputs">${SIZES.map(
-        (sz) => `
-          <div class="size-input-group">
-            <span>${sz}</span>
-            <input data-part="${partKey}" data-idx="${idx}" data-field="sizeConsumption" data-size="${sz}" type="number" step="0.01" min="0" value="${row.sizeConsumption[sz]}" />
-          </div>`
-      ).join("")}</div>`
-    : `<input data-part="${partKey}" data-idx="${idx}" data-field="consumption" type="number" step="0.01" min="0" value="${row.consumption}" style="max-width:90px;" />`;
+  const isOther = !row.custom && idx === FIXED_PROCESS_NAMES.length + 1; // last fixed row
+  const isCustom = !!row.custom;
 
   const vendorCell = isFabric
     ? `<span style="color:var(--muted); font-size:12px;">-</span>`
@@ -234,60 +224,52 @@ function renderComponentRow(partKey, row, idx) {
     ? `<span style="color:var(--muted); font-size:12px;">-</span>`
     : `<input data-part="${partKey}" data-idx="${idx}" data-field="received" type="checkbox" ${row.received ? "checked" : ""} />`;
 
-  // Fabric and "Other" are the only free-text names; the fixed process
-  // rows in between are plain labels - there's nothing to choose or type.
+  // Fabric, "Other", and custom-added rows are free-text names; the fixed
+  // process rows in between are plain labels - nothing to choose or type.
   const descriptionCell =
-    isFabric || isOther
-      ? `<input data-part="${partKey}" data-idx="${idx}" data-field="description" value="${escapeAttr(row.description)}" placeholder="${isFabric ? "e.g. Self Fabric - Rayon" : "Specify other line item"}" />`
+    isFabric || isOther || isCustom
+      ? `<input data-part="${partKey}" data-idx="${idx}" data-field="description" value="${escapeAttr(row.description)}" placeholder="${isFabric ? "e.g. Self Fabric - Rayon" : "Line item name"}" />`
       : `<span>${escapeAttr(row.description)}</span>`;
+
+  const removeCell = isCustom
+    ? `<button class="btn-small" type="button" data-action="remove-line-item" data-part="${partKey}" data-idx="${idx}">✕</button>`
+    : "";
 
   return `
     <tr>
       <td>${descriptionCell}</td>
       <td><input data-part="${partKey}" data-idx="${idx}" data-field="uom" value="${escapeAttr(row.uom)}" placeholder="Mtr/Pcs" /></td>
       <td><input data-part="${partKey}" data-idx="${idx}" data-field="rate" type="number" step="0.01" min="0" value="${row.rate}" /></td>
-      <td>${consumptionCell}</td>
+      <td><input data-part="${partKey}" data-idx="${idx}" data-field="consumption" type="number" step="0.01" min="0" value="${row.consumption}" style="max-width:90px;" /></td>
       <td>${vendorCell}</td>
       <td>${billCell}</td>
       <td style="text-align:center;">${receivedCell}</td>
+      <td>${removeCell}</td>
     </tr>
   `;
 }
 
 function renderCostSummary() {
   const head = el("costSummaryHead");
-  head.innerHTML = `<th style="text-align:left;">Part</th>` + SIZES.map((s) => `<th>${s}</th>`).join("");
+  head.innerHTML = `<th style="text-align:left;">Part</th><th>Cost / Garment</th>`;
 
   const currency = el("currency").value || "";
   let rows = "";
   PART_KEYS.forEach((key) => {
     if (!parts[key].enabled) return;
-    rows +=
-      `<tr><td style="text-align:left;">${PART_LABELS[key]}</td>` +
-      SIZES.map((s) => `<td class="cost-cell">${partCostAtSize(key, s).toFixed(2)}</td>`).join("") +
-      `</tr>`;
+    rows += `<tr><td style="text-align:left;">${PART_LABELS[key]}</td><td class="cost-cell">${partCost(key).toFixed(2)}</td></tr>`;
   });
-  rows +=
-    `<tr style="font-weight:bold; border-top:2px solid var(--navy);"><td style="text-align:left;">Total Cost / Garment</td>` +
-    SIZES.map((s) => `<td class="cost-cell">${currency} ${grandCostAtSize(s).toFixed(2)}</td>`).join("") +
-    `</tr>`;
+  const cost = grandCost();
   const selling = totalSellingRate();
-  rows +=
-    `<tr><td style="text-align:left;">Selling Rate / Garment</td>` +
-    SIZES.map(() => `<td class="cost-cell">${currency} ${selling.toFixed(2)}</td>`).join("") +
-    `</tr>`;
-  rows +=
-    `<tr><td style="text-align:left;">Margin / Garment</td>` +
-    SIZES.map((s) => `<td class="cost-cell">${currency} ${(selling - grandCostAtSize(s)).toFixed(2)}</td>`).join("") +
-    `</tr>`;
+  rows += `<tr style="font-weight:bold; border-top:2px solid var(--navy);"><td style="text-align:left;">Total Cost / Garment</td><td class="cost-cell">${currency} ${cost.toFixed(2)}</td></tr>`;
+  rows += `<tr><td style="text-align:left;">Selling Rate / Garment</td><td class="cost-cell">${currency} ${selling.toFixed(2)}</td></tr>`;
+  rows += `<tr><td style="text-align:left;">Margin / Garment</td><td class="cost-cell">${currency} ${(selling - cost).toFixed(2)}</td></tr>`;
   el("costSummaryBody").innerHTML = rows;
 
   const qty = totalPcs();
   el("sumOrderQty").textContent = qty ? qty.toLocaleString() : "-";
 
-  // Size-weighted totals across the whole order (cost/value vary by size, qty varies by color+size)
-  const sizeTotals = Object.fromEntries(SIZES.map((s) => [s, colors.reduce((sum, c) => sum + (Number(c.qty[s]) || 0), 0)]));
-  const totalCostValue = SIZES.reduce((sum, s) => sum + grandCostAtSize(s) * sizeTotals[s], 0);
+  const totalCostValue = cost * qty;
   const totalSellingValue = selling * qty;
   el("sumCostValue").textContent = qty ? `${currency} ${totalCostValue.toFixed(2)}` : "-";
   el("sumSellingValue").textContent = qty ? `${currency} ${totalSellingValue.toFixed(2)}` : "-";
@@ -397,9 +379,7 @@ el("partsContainer").addEventListener("input", (e) => {
   const field = t.dataset.field;
   if (!field) return;
   const row = parts[t.dataset.part].components[Number(t.dataset.idx)];
-  if (field === "sizeConsumption") {
-    row.sizeConsumption[t.dataset.size] = Number(t.value) || 0;
-  } else if (field === "consumption" || field === "rate") {
+  if (field === "consumption" || field === "rate") {
     row[field] = Number(t.value) || 0;
   } else if (field === "received") {
     row.received = t.checked;
@@ -413,6 +393,20 @@ el("partsContainer").addEventListener("change", (e) => {
   const t = e.target;
   if (t.dataset.action === "toggle-part") {
     parts[t.dataset.part].enabled = t.checked;
+    renderParts();
+  }
+});
+
+el("partsContainer").addEventListener("click", (e) => {
+  const addBtn = e.target.closest('button[data-action="add-line-item"]');
+  if (addBtn) {
+    parts[addBtn.dataset.part].components.push(defaultCustomRow());
+    renderParts();
+    return;
+  }
+  const removeBtn = e.target.closest('button[data-action="remove-line-item"]');
+  if (removeBtn) {
+    parts[removeBtn.dataset.part].components.splice(Number(removeBtn.dataset.idx), 1);
     renderParts();
   }
 });
