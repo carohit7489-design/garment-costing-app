@@ -38,6 +38,42 @@
         <div>Total Order Qty<strong id="infoTotalQty">-</strong></div>
       </div>
 
+      <section class="panel" style="margin-top:16px;">
+        <h2>Fabric Cut Planning (Size Ratio)</h2>
+        <p style="color:var(--muted); font-size:12px; margin-top:0;">Category A = sizes 40/42/44/46, Category B = sizes 48/50/52. Enter the fabric on hand and the split between them to see how many pieces each category can cut.</p>
+        <div class="form-grid" style="grid-template-columns: repeat(3, 1fr);">
+          <div class="field">
+            <label>Part / Fabric</label>
+            <select id="ratioPartSelect"></select>
+          </div>
+          <div class="field">
+            <label>Total Fabric Available</label>
+            <input id="ratioTotalFabric" type="number" min="0" step="0.01" placeholder="e.g. 1000" />
+          </div>
+          <div class="field">
+            <label>Category A Share %</label>
+            <input id="ratioPctA" type="number" min="0" max="100" step="1" value="75" />
+          </div>
+        </div>
+        <div class="table-scroll">
+          <table class="comp-table" id="ratioTable">
+            <thead>
+              <tr>
+                <th style="text-align:left;">Category</th>
+                <th>Sizes</th>
+                <th>Share %</th>
+                <th>Fabric Allocated</th>
+                <th>Avg Consumption/Pc</th>
+                <th>Est. Pieces</th>
+              </tr>
+            </thead>
+            <tbody id="ratioBody"></tbody>
+            <tfoot><tr id="ratioFoot" style="font-weight:bold;"></tr></tfoot>
+          </table>
+        </div>
+        <div id="ratioEmptyState" class="empty-state" style="display:none;">This style has no fabric consumption data to plan cutting against.</div>
+      </section>
+
       <div id="notApprovedBanner" class="empty-state" style="display:none; background:#fdecea; border:1px solid #f5c2c0; border-radius:6px; color:var(--red); font-weight:bold;">
         This design has not been approved by the owner yet - actual consumption cannot be logged until it is.
       </div>

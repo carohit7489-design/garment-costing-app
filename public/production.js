@@ -1,6 +1,8 @@
 const SIZES = ["40", "42", "44", "46", "48", "50", "52"];
 const PART_KEYS = ["kurta", "pant", "dupatta"];
 const PART_LABELS = { kurta: "Kurta", pant: "Pant", dupatta: "Dupatta" };
+const RATIO_CATEGORY_A_SIZES = ["40", "42", "44", "46"];
+const RATIO_CATEGORY_B_SIZES = ["48", "50", "52"];
 
 let currentStyle = null;
 let selectedSize = SIZES[0];
@@ -99,6 +101,88 @@ function refreshExpectedConsumption() {
   renderPartsActual();
 }
 
+// ---- Fabric cut planning (Category A: 40-46, Category B: 48-52) ----
+// A pure what-if calculator - not saved anywhere, just helps translate
+// "X meters on hand" into "how many pieces can each size group cut".
+
+function populateRatioPartSelect() {
+  const options = PART_KEYS.filter((key) => {
+    const part = currentStyle.parts[key];
+    return part.enabled && part.components.some((c) => c.type === "Fabric");
+  });
+  el("ratioPartSelect").innerHTML = options.map((k) => `<option value="${k}">${PART_LABELS[k]}</option>`).join("");
+  renderRatioPlanning();
+}
+
+function ratioFabricRow() {
+  const partKey = el("ratioPartSelect").value;
+  if (!partKey || !currentStyle) return null;
+  const part = currentStyle.parts[partKey];
+  return part ? part.components.find((c) => c.type === "Fabric") || null : null;
+}
+
+function averageConsumption(fabricRow, sizes) {
+  const vals = sizes.map((s) => Number(fabricRow.sizeConsumption?.[s]) || 0).filter((v) => v > 0);
+  return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+}
+
+function renderRatioPlanning() {
+  const fabricRow = ratioFabricRow();
+  if (!fabricRow) {
+    el("ratioTable").style.display = "none";
+    el("ratioEmptyState").style.display = "block";
+    return;
+  }
+  el("ratioTable").style.display = "";
+  el("ratioEmptyState").style.display = "none";
+
+  const totalFabric = Number(el("ratioTotalFabric").value) || 0;
+  let pctA = Number(el("ratioPctA").value);
+  if (isNaN(pctA)) pctA = 0;
+  pctA = Math.min(100, Math.max(0, pctA));
+  const pctB = 100 - pctA;
+
+  const avgA = averageConsumption(fabricRow, RATIO_CATEGORY_A_SIZES);
+  const avgB = averageConsumption(fabricRow, RATIO_CATEGORY_B_SIZES);
+
+  const fabricA = totalFabric * (pctA / 100);
+  const fabricB = totalFabric * (pctB / 100);
+  const piecesA = avgA > 0 ? Math.floor(fabricA / avgA) : 0;
+  const piecesB = avgB > 0 ? Math.floor(fabricB / avgB) : 0;
+  const uom = fabricRow.uom || "";
+
+  el("ratioBody").innerHTML = `
+    <tr>
+      <td style="text-align:left;">Category A</td>
+      <td>40-42-44-46</td>
+      <td>${pctA.toFixed(0)}%</td>
+      <td>${fabricA.toFixed(2)} ${uom}</td>
+      <td>${avgA.toFixed(2)} ${uom}</td>
+      <td style="font-weight:bold;">${piecesA}</td>
+    </tr>
+    <tr>
+      <td style="text-align:left;">Category B</td>
+      <td>48-50-52</td>
+      <td>${pctB.toFixed(0)}%</td>
+      <td>${fabricB.toFixed(2)} ${uom}</td>
+      <td>${avgB.toFixed(2)} ${uom}</td>
+      <td style="font-weight:bold;">${piecesB}</td>
+    </tr>
+  `;
+  el("ratioFoot").innerHTML = `
+    <td style="text-align:left;">Total</td>
+    <td></td>
+    <td>100%</td>
+    <td>${totalFabric.toFixed(2)} ${uom}</td>
+    <td></td>
+    <td>${piecesA + piecesB}</td>
+  `;
+}
+
+el("ratioPartSelect").addEventListener("change", renderRatioPlanning);
+el("ratioTotalFabric").addEventListener("input", renderRatioPlanning);
+el("ratioPctA").addEventListener("input", renderRatioPlanning);
+
 async function openStyle(id) {
   const res = await fetch(`/api/styles/${id}/production-view`);
   if (!res.ok) return toast("Could not load style", true);
@@ -119,6 +203,9 @@ async function openStyle(id) {
     ? colorNames.map((c) => `<option value="${escapeAttr(c)}">${escapeAttr(c)}</option>`).join("")
     : `<option value="">-</option>`;
   selectedColor = colorNames[0] || "";
+
+  el("ratioTotalFabric").value = "";
+  populateRatioPartSelect();
 
   const img = el("designPreview");
   const empty = el("designPreviewEmpty");
