@@ -1,5 +1,5 @@
 let currentStyle = null;
-let producedCombos = []; // [{color, size, balance}] - only combos production has actually logged
+let producedCombos = []; // [{color, category, sizes, balance}] - only combos production has actually logged
 
 const el = (id) => document.getElementById(id);
 
@@ -53,8 +53,8 @@ async function openStyle(id) {
   el("formTitle").textContent = `${s.styleNo} - ${s.styleName}`;
 
   // Only combinations production actually logged (produced > 0) - selling
-  // a size/color that was never produced is exactly the bug this fixes.
-  producedCombos = s.inventory.bySizeColor.filter((r) => r.produced > 0);
+  // a color/category that was never produced is exactly the bug this fixes.
+  producedCombos = s.inventory.byColorCategory.filter((r) => r.produced > 0);
 
   el("saleQty").value = "";
   el("saleDate").value = new Date().toISOString().slice(0, 10);
@@ -78,32 +78,34 @@ function renderSaleForm() {
 
   const colors = Array.from(new Set(producedCombos.map((r) => r.color)));
   el("saleColor").innerHTML = colors.map((c) => `<option value="${escapeAttr(c)}">${escapeAttr(c || "-")}</option>`).join("");
-  populateSaleSizes();
+  populateSaleCategories();
 }
 
-function populateSaleSizes() {
+function populateSaleCategories() {
   const color = el("saleColor").value;
-  const sizesForColor = producedCombos.filter((r) => r.color === color);
-  el("saleSize").innerHTML = sizesForColor.map((r) => `<option value="${escapeAttr(r.size)}">${escapeAttr(r.size)}</option>`).join("");
+  const categoriesForColor = producedCombos.filter((r) => r.color === color);
+  el("saleCategory").innerHTML = categoriesForColor
+    .map((r) => `<option value="${escapeAttr(r.category)}">Category ${escapeAttr(r.category)} (${r.sizes.join("-")})</option>`)
+    .join("");
   updateAvailableHint();
 }
 
 function updateAvailableHint() {
   const color = el("saleColor").value;
-  const size = el("saleSize").value;
-  const combo = producedCombos.find((r) => r.color === color && r.size === size);
+  const category = el("saleCategory").value;
+  const combo = producedCombos.find((r) => r.color === color && r.category === category);
   el("saleAvailableHint").textContent = combo ? `(Available: ${combo.balance})` : "";
 }
 
-el("saleColor").addEventListener("change", populateSaleSizes);
-el("saleSize").addEventListener("change", updateAvailableHint);
+el("saleColor").addEventListener("change", populateSaleCategories);
+el("saleCategory").addEventListener("change", updateAvailableHint);
 
 function renderInventory(inv) {
   el("sumProduced").textContent = inv.produced.toLocaleString();
   el("sumSold").textContent = inv.sold.toLocaleString();
   el("sumBalance").textContent = inv.balance.toLocaleString();
 
-  if (inv.bySizeColor.length === 0) {
+  if (inv.byColorCategory.length === 0) {
     el("inventoryTable").style.display = "none";
     el("inventoryEmptyState").style.display = "block";
     return;
@@ -111,13 +113,14 @@ function renderInventory(inv) {
   el("inventoryTable").style.display = "";
   el("inventoryEmptyState").style.display = "none";
 
-  el("inventoryBody").innerHTML = inv.bySizeColor
+  el("inventoryBody").innerHTML = inv.byColorCategory
     .map((r) => {
       const lowColor = r.balance <= 0 ? "var(--red)" : r.balance < r.produced * 0.2 ? "#b8860b" : "#1a7a3c";
       return `
         <tr>
           <td style="text-align:left;">${escapeAttr(r.color || "-")}</td>
-          <td>${escapeAttr(r.size)}</td>
+          <td>${escapeAttr(r.category)}</td>
+          <td>${r.sizes.join("-")}</td>
           <td>${r.produced}</td>
           <td>${r.sold}</td>
           <td style="font-weight:bold; color:${lowColor};">${r.balance}</td>
@@ -139,7 +142,7 @@ function renderSalesHistory(sales) {
     .map(
       (s) => `
         <div class="hist-item">
-          <strong>${escapeAttr(s.date)}</strong> · ${escapeAttr(s.color)} / Size ${escapeAttr(s.size)} · Sold ${s.qtySold} pcs
+          <strong>${escapeAttr(s.date)}</strong> · ${escapeAttr(s.color)} / Category ${escapeAttr(s.category || "-")} · Sold ${s.qtySold} pcs
           ${s.buyer ? ` · ${escapeAttr(s.buyer)}` : ""}${s.reference ? ` · Ref: ${escapeAttr(s.reference)}` : ""}
         </div>
       `
@@ -150,11 +153,11 @@ function renderSalesHistory(sales) {
 async function recordSale() {
   if (!currentStyle) return;
   const color = el("saleColor").value;
-  const size = el("saleSize").value;
+  const category = el("saleCategory").value;
   const qtySold = Number(el("saleQty").value);
-  const combo = producedCombos.find((r) => r.color === color && r.size === size);
+  const combo = producedCombos.find((r) => r.color === color && r.category === category);
   if (!combo) {
-    toast("No produced color/size to sell against", true);
+    toast("No produced color/category to sell against", true);
     return;
   }
   if (!qtySold || qtySold <= 0) {
@@ -163,13 +166,13 @@ async function recordSale() {
   }
 
   if (qtySold > combo.balance) {
-    const proceed = confirm(`Only ${combo.balance} in stock for ${color || "-"} / ${size}. Record this sale of ${qtySold} anyway?`);
+    const proceed = confirm(`Only ${combo.balance} in stock for ${color || "-"} / Category ${category}. Record this sale of ${qtySold} anyway?`);
     if (!proceed) return;
   }
 
   const payload = {
     color,
-    size,
+    category,
     qtySold,
     date: el("saleDate").value,
     buyer: el("saleBuyer").value.trim(),

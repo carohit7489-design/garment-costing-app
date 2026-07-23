@@ -47,13 +47,15 @@
       </div>
 
       <section class="panel" style="margin-top:16px;">
-        <h2>Inventory Balance by Color &amp; Size</h2>
+        <h2>Inventory Balance by Color &amp; Category</h2>
+        <p style="color:var(--muted); font-size:12px; margin-top:0;">Category A = sizes 40/42/44/46, Category B = sizes 48/50/52 (matches the cut-planning ratio on the Production page).</p>
         <div class="table-scroll">
           <table class="comp-table" id="inventoryTable">
             <thead>
               <tr>
                 <th style="text-align:left;">Color</th>
-                <th>Size</th>
+                <th>Category</th>
+                <th>Sizes</th>
                 <th>Produced</th>
                 <th>Sold</th>
                 <th>Balance</th>
@@ -67,7 +69,7 @@
 
       <section class="panel" style="margin-top:16px;">
         <h2>Record a Sale</h2>
-        <p style="color:var(--muted); font-size:12px; margin-top:0;">Color and Size only list combinations production has actually logged, so a sale always nets against real stock.</p>
+        <p style="color:var(--muted); font-size:12px; margin-top:0;">Sales are recorded against a Color + Category (A/B), pooled across that category's sizes - not an exact size. Only combinations production has actually logged appear here.</p>
 
         <div id="saleForm">
           <div class="form-grid" style="grid-template-columns: repeat(3, 1fr);">
@@ -76,8 +78,8 @@
               <select id="saleColor"></select>
             </div>
             <div class="field">
-              <label>Size</label>
-              <select id="saleSize"></select>
+              <label>Category</label>
+              <select id="saleCategory"></select>
             </div>
             <div class="field">
               <label>Qty Sold <span id="saleAvailableHint" style="color:var(--muted); font-weight:normal;"></span></label>

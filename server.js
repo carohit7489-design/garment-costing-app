@@ -19,6 +19,13 @@ const APPROVER_SESSION_COOKIE = "approver_session";
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours
 
 const SIZES = ["40", "42", "44", "46", "48", "50", "52"];
+// Matches the production page's cut-planning categories: A = 40-46, B = 48-52.
+const RATIO_CATEGORY_SIZES = { A: ["40", "42", "44", "46"], B: ["48", "50", "52"] };
+function categoryForSize(size) {
+  if (RATIO_CATEGORY_SIZES.A.includes(size)) return "A";
+  if (RATIO_CATEGORY_SIZES.B.includes(size)) return "B";
+  return null;
+}
 const PART_KEYS = ["kurta", "pant", "dupatta"];
 // Fixed line items every part offers, matching the client's own process
 // list - the owner fills in rate/consumption for whichever apply and
@@ -333,37 +340,45 @@ function migrateStyle(style) {
   };
 }
 
-// Inventory = produced (from production's actuals) minus sold (from sales),
-// broken down by color + size to match how both are already logged.
+// Inventory = produced (from production's actuals, size-level) minus sold
+// (from sales, which are recorded at the Category A/B level - see the cut
+// planner on the production page for what defines A vs B), rolled up to
+// color + category since that's the level sales actually happen at.
 function computeInventory(style) {
-  const key = (color, size) => `${color || ""}|||${size || ""}`;
+  const key = (color, category) => `${color || ""}|||${category || ""}`;
   const produced = new Map();
   const sold = new Map();
 
   (style.actuals || []).forEach((entry) => {
-    const k = key(entry.color, entry.size);
+    const category = categoryForSize(entry.size);
+    if (!category) return;
+    const k = key(entry.color, category);
     produced.set(k, (produced.get(k) || 0) + (Number(entry.actualProducedQty) || 0));
   });
   (style.sales || []).forEach((entry) => {
-    const k = key(entry.color, entry.size);
+    // Older sales were logged per exact size before this was category-based;
+    // derive the category from that size so nothing is lost.
+    const category = entry.category || categoryForSize(entry.size);
+    if (!category) return;
+    const k = key(entry.color, category);
     sold.set(k, (sold.get(k) || 0) + (Number(entry.qtySold) || 0));
   });
 
   const keys = new Set([...produced.keys(), ...sold.keys()]);
-  const bySizeColor = Array.from(keys).map((k) => {
-    const [color, size] = k.split("|||");
+  const byColorCategory = Array.from(keys).map((k) => {
+    const [color, category] = k.split("|||");
     const p = produced.get(k) || 0;
     const s = sold.get(k) || 0;
-    return { color, size, produced: p, sold: s, balance: p - s };
+    return { color, category, sizes: RATIO_CATEGORY_SIZES[category] || [], produced: p, sold: s, balance: p - s };
   });
-  bySizeColor.sort((a, b) => a.color.localeCompare(b.color) || SIZES.indexOf(a.size) - SIZES.indexOf(b.size));
+  byColorCategory.sort((a, b) => a.color.localeCompare(b.color) || a.category.localeCompare(b.category));
 
-  const totals = bySizeColor.reduce(
+  const totals = byColorCategory.reduce(
     (acc, r) => ({ produced: acc.produced + r.produced, sold: acc.sold + r.sold, balance: acc.balance + r.balance }),
     { produced: 0, sold: 0, balance: 0 }
   );
 
-  return { bySizeColor, ...totals };
+  return { byColorCategory, ...totals };
 }
 
 function readStyles() {
@@ -687,7 +702,7 @@ app.post("/api/styles/:id/actuals", (req, res) => {
 
 // ---- Sales (inventory dashboard) ----
 // Owner-only: recording a sale reduces the available balance for that
-// color+size, alongside whatever production has logged as produced.
+// color+category, alongside whatever production has logged as produced.
 
 app.post("/api/styles/:id/sales", requireOwnerAuth, (req, res) => {
   const styles = readStyles();
@@ -695,14 +710,14 @@ app.post("/api/styles/:id/sales", requireOwnerAuth, (req, res) => {
   if (idx === -1) return res.status(404).json({ error: "Style not found" });
 
   const body = req.body;
-  if (body.color === undefined || !SIZES.includes(body.size) || !(Number(body.qtySold) > 0)) {
-    return res.status(400).json({ error: "color, size, and a positive qtySold are required" });
+  if (body.color === undefined || !["A", "B"].includes(body.category) || !(Number(body.qtySold) > 0)) {
+    return res.status(400).json({ error: "color, category (A or B), and a positive qtySold are required" });
   }
 
   const entry = {
     id: crypto.randomUUID(),
     color: body.color,
-    size: body.size,
+    category: body.category,
     qtySold: Number(body.qtySold),
     date: body.date || new Date().toISOString().slice(0, 10),
     buyer: body.buyer || "",
