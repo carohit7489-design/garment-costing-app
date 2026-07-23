@@ -40,8 +40,8 @@
 
       <section class="panel" style="margin-top:16px;">
         <h2>Fabric Cut Planning (Size Ratio)</h2>
-        <p style="color:var(--muted); font-size:12px; margin-top:0;">Category A = sizes 40/42/44/46, Category B = sizes 48/50/52. Enter the fabric on hand and the split between them to see how many pieces each category can cut.</p>
-        <div class="form-grid" style="grid-template-columns: repeat(3, 1fr);">
+        <p style="color:var(--muted); font-size:12px; margin-top:0;">Total pieces = Total Fabric &divide; Average Consumption per Piece. Those pieces then split Category A (sizes 40/42/44/46) / Category B (48/50/52) by the share below.</p>
+        <div class="form-grid" style="grid-template-columns: repeat(4, 1fr);">
           <div class="field">
             <label>Part / Fabric</label>
             <select id="ratioPartSelect"></select>
@@ -51,9 +51,18 @@
             <input id="ratioTotalFabric" type="number" min="0" step="0.01" placeholder="e.g. 1000" />
           </div>
           <div class="field">
+            <label>Avg Consumption / Piece</label>
+            <input id="ratioAvgConsumption" type="number" min="0" step="0.01" placeholder="e.g. 6" />
+          </div>
+          <div class="field">
             <label>Category A Share %</label>
             <input id="ratioPctA" type="number" min="0" max="100" step="1" value="75" />
           </div>
+        </div>
+        <div class="summary-bar" style="margin-bottom:12px;">
+          <div>Total Pieces Obtainable<strong id="ratioTotalPieces">-</strong></div>
+          <div>Fabric Used<strong id="ratioFabricUsed">-</strong></div>
+          <div>Fabric Remaining<strong id="ratioFabricRemaining">-</strong></div>
         </div>
         <div class="table-scroll">
           <table class="comp-table" id="ratioTable">
@@ -62,9 +71,8 @@
                 <th style="text-align:left;">Category</th>
                 <th>Sizes</th>
                 <th>Share %</th>
-                <th>Fabric Allocated</th>
-                <th>Avg Consumption/Pc</th>
                 <th>Est. Pieces</th>
+                <th>Fabric Used</th>
               </tr>
             </thead>
             <tbody id="ratioBody"></tbody>

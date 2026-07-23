@@ -102,8 +102,9 @@ function refreshExpectedConsumption() {
 }
 
 // ---- Fabric cut planning (Category A: 40-46, Category B: 48-52) ----
-// A pure what-if calculator - not saved anywhere, just helps translate
-// "X meters on hand" into "how many pieces can each size group cut".
+// A pure what-if calculator - not saved anywhere. Total Fabric / Average
+// Consumption per Piece gives the total pieces obtainable; that total is
+// then split across the two size categories by the share %.
 
 function populateRatioPartSelect() {
   const options = PART_KEYS.filter((key) => {
@@ -111,7 +112,7 @@ function populateRatioPartSelect() {
     return part.enabled && part.components.some((c) => c.type === "Fabric");
   });
   el("ratioPartSelect").innerHTML = options.map((k) => `<option value="${k}">${PART_LABELS[k]}</option>`).join("");
-  renderRatioPlanning();
+  updateRatioAvgDefault();
 }
 
 function ratioFabricRow() {
@@ -126,6 +127,15 @@ function averageConsumption(fabricRow, sizes) {
   return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
 }
 
+// Suggests a starting average (blended across all sizes) whenever the
+// selected part/fabric changes - the field stays editable afterward, since
+// real cutting-room average consumption may differ from the costing sheet.
+function updateRatioAvgDefault() {
+  const fabricRow = ratioFabricRow();
+  el("ratioAvgConsumption").value = fabricRow ? averageConsumption(fabricRow, SIZES).toFixed(2) : "";
+  renderRatioPlanning();
+}
+
 function renderRatioPlanning() {
   const fabricRow = ratioFabricRow();
   if (!fabricRow) {
@@ -136,51 +146,54 @@ function renderRatioPlanning() {
   el("ratioTable").style.display = "";
   el("ratioEmptyState").style.display = "none";
 
+  const uom = fabricRow.uom || "";
   const totalFabric = Number(el("ratioTotalFabric").value) || 0;
+  const avgConsumption = Number(el("ratioAvgConsumption").value) || 0;
   let pctA = Number(el("ratioPctA").value);
   if (isNaN(pctA)) pctA = 0;
   pctA = Math.min(100, Math.max(0, pctA));
   const pctB = 100 - pctA;
 
-  const avgA = averageConsumption(fabricRow, RATIO_CATEGORY_A_SIZES);
-  const avgB = averageConsumption(fabricRow, RATIO_CATEGORY_B_SIZES);
+  const totalPieces = avgConsumption > 0 ? Math.floor(totalFabric / avgConsumption) : 0;
+  const piecesA = Math.floor(totalPieces * (pctA / 100));
+  const piecesB = totalPieces - piecesA; // always sums back to totalPieces exactly
 
-  const fabricA = totalFabric * (pctA / 100);
-  const fabricB = totalFabric * (pctB / 100);
-  const piecesA = avgA > 0 ? Math.floor(fabricA / avgA) : 0;
-  const piecesB = avgB > 0 ? Math.floor(fabricB / avgB) : 0;
-  const uom = fabricRow.uom || "";
+  const fabricUsedA = piecesA * avgConsumption;
+  const fabricUsedB = piecesB * avgConsumption;
+  const totalFabricUsed = fabricUsedA + fabricUsedB;
+
+  el("ratioTotalPieces").textContent = totalPieces.toLocaleString();
+  el("ratioFabricUsed").textContent = `${totalFabricUsed.toFixed(2)} ${uom}`;
+  el("ratioFabricRemaining").textContent = `${(totalFabric - totalFabricUsed).toFixed(2)} ${uom}`;
 
   el("ratioBody").innerHTML = `
     <tr>
       <td style="text-align:left;">Category A</td>
       <td>40-42-44-46</td>
       <td>${pctA.toFixed(0)}%</td>
-      <td>${fabricA.toFixed(2)} ${uom}</td>
-      <td>${avgA.toFixed(2)} ${uom}</td>
       <td style="font-weight:bold;">${piecesA}</td>
+      <td>${fabricUsedA.toFixed(2)} ${uom}</td>
     </tr>
     <tr>
       <td style="text-align:left;">Category B</td>
       <td>48-50-52</td>
       <td>${pctB.toFixed(0)}%</td>
-      <td>${fabricB.toFixed(2)} ${uom}</td>
-      <td>${avgB.toFixed(2)} ${uom}</td>
       <td style="font-weight:bold;">${piecesB}</td>
+      <td>${fabricUsedB.toFixed(2)} ${uom}</td>
     </tr>
   `;
   el("ratioFoot").innerHTML = `
     <td style="text-align:left;">Total</td>
     <td></td>
     <td>100%</td>
-    <td>${totalFabric.toFixed(2)} ${uom}</td>
-    <td></td>
-    <td>${piecesA + piecesB}</td>
+    <td>${totalPieces}</td>
+    <td>${totalFabricUsed.toFixed(2)} ${uom}</td>
   `;
 }
 
-el("ratioPartSelect").addEventListener("change", renderRatioPlanning);
+el("ratioPartSelect").addEventListener("change", updateRatioAvgDefault);
 el("ratioTotalFabric").addEventListener("input", renderRatioPlanning);
+el("ratioAvgConsumption").addEventListener("input", renderRatioPlanning);
 el("ratioPctA").addEventListener("input", renderRatioPlanning);
 
 async function openStyle(id) {
