@@ -1,4 +1,5 @@
-const SIZES = ["40", "42", "44", "46", "48", "50", "52"];
+const CATEGORIES = ["A", "B"];
+const CATEGORY_LABELS = { A: "Category A", B: "Category B" };
 const PART_KEYS = ["kurta", "pant", "dupatta"];
 const PART_LABELS = { kurta: "Kurta", pant: "Pant", dupatta: "Dupatta" };
 
@@ -36,7 +37,7 @@ function totalSellingRate(style) {
 }
 
 function totalPcs(style) {
-  return (style.colors || []).reduce((sum, c) => sum + SIZES.reduce((s2, sz) => s2 + (Number(c.qty[sz]) || 0), 0), 0);
+  return (style.colors || []).reduce((sum, c) => sum + (Number(c.qty.A) || 0) + (Number(c.qty.B) || 0), 0);
 }
 
 // ---- Style list ----
@@ -109,23 +110,23 @@ async function openStyle(id) {
 }
 
 function renderColorSizeTable(s) {
-  el("colorSizeHead").innerHTML = `<th style="text-align:left;">Color</th>` + SIZES.map((sz) => `<th>${sz}</th>`).join("") + `<th>Total</th>`;
+  el("colorSizeHead").innerHTML = `<th style="text-align:left;">Color</th>` + CATEGORIES.map((cat) => `<th>${CATEGORY_LABELS[cat]}</th>`).join("") + `<th>Total</th>`;
   const colors = s.colors || [];
   el("colorSizeBody").innerHTML = colors
     .map((c) => {
-      const rowTotal = SIZES.reduce((sum, sz) => sum + (Number(c.qty[sz]) || 0), 0);
+      const rowTotal = CATEGORIES.reduce((sum, cat) => sum + (Number(c.qty[cat]) || 0), 0);
       return (
         `<tr><td style="text-align:left;">${escapeAttr(c.name)}</td>` +
-        SIZES.map((sz) => `<td>${c.qty[sz] || 0}</td>`).join("") +
+        CATEGORIES.map((cat) => `<td>${c.qty[cat] || 0}</td>`).join("") +
         `<td class="cost-cell">${rowTotal}</td></tr>`
       );
     })
     .join("");
-  const sizeTotals = SIZES.map((sz) => colors.reduce((sum, c) => sum + (Number(c.qty[sz]) || 0), 0));
-  const grandTotal = sizeTotals.reduce((a, b) => a + b, 0);
+  const catTotals = CATEGORIES.map((cat) => colors.reduce((sum, c) => sum + (Number(c.qty[cat]) || 0), 0));
+  const grandTotal = catTotals.reduce((a, b) => a + b, 0);
   el("colorSizeFoot").innerHTML =
     `<td style="text-align:left; font-weight:bold;">Total</td>` +
-    sizeTotals.map((t) => `<td class="cost-cell">${t}</td>`).join("") +
+    catTotals.map((t) => `<td class="cost-cell">${t}</td>`).join("") +
     `<td class="cost-cell">${grandTotal}</td>`;
 }
 

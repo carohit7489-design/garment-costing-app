@@ -1,4 +1,5 @@
-const SIZES = ["40", "42", "44", "46", "48", "50", "52"];
+const CATEGORIES = ["A", "B"];
+const CATEGORY_LABELS = { A: "Category A", B: "Category B" };
 const PART_KEYS = ["kurta", "pant", "dupatta"];
 const PART_LABELS = { kurta: "Kurta", pant: "Pant", dupatta: "Dupatta" };
 // Fixed line items every part offers (matching the client's own process
@@ -43,12 +44,12 @@ function escapeAttr(s) {
   return String(s ?? "").replace(/"/g, "&quot;");
 }
 
-function defaultSizeQty() {
-  return Object.fromEntries(SIZES.map((s) => [s, 0]));
+function defaultCatQty() {
+  return { A: 0, B: 0 };
 }
 
 function defaultColor() {
-  return { name: "", qty: defaultSizeQty() };
+  return { name: "", qty: defaultCatQty() };
 }
 
 function defaultFabricRow() {
@@ -93,22 +94,22 @@ function totalSellingRate() {
   return PART_KEYS.reduce((sum, k) => sum + (parts[k].enabled ? Number(parts[k].sellingRate) || 0 : 0), 0);
 }
 
-// ---- Order Quantity by Color & Size ----
+// ---- Order Quantity by Color & Category ----
 
 function renderColorSizeTable() {
   el("colorSizeHead").innerHTML =
-    `<th style="text-align:left;">Color</th>` + SIZES.map((s) => `<th>${s}</th>`).join("") + `<th>Total</th><th></th>`;
+    `<th style="text-align:left;">Color</th>` + CATEGORIES.map((c) => `<th>${CATEGORY_LABELS[c]}</th>`).join("") + `<th>Total</th><th></th>`;
 
   el("colorSizeBody").innerHTML = colors
     .map((c, idx) => {
-      const sizeCells = SIZES.map(
-        (s) => `<td><input data-idx="${idx}" data-size="${s}" type="number" min="0" step="1" value="${c.qty[s]}" style="max-width:70px;" /></td>`
+      const catCells = CATEGORIES.map(
+        (cat) => `<td><input data-idx="${idx}" data-cat="${cat}" type="number" min="0" step="1" value="${c.qty[cat]}" style="max-width:70px;" /></td>`
       ).join("");
-      const rowTotal = SIZES.reduce((sum, s) => sum + (Number(c.qty[s]) || 0), 0);
+      const rowTotal = CATEGORIES.reduce((sum, cat) => sum + (Number(c.qty[cat]) || 0), 0);
       return `
         <tr>
           <td><input data-idx="${idx}" data-field="name" value="${escapeAttr(c.name)}" placeholder="e.g. Blue" style="max-width:120px;" /></td>
-          ${sizeCells}
+          ${catCells}
           <td class="cost-cell" data-row-total="${idx}">${rowTotal}</td>
           <td><button class="btn-small" type="button" data-action="remove-color" data-idx="${idx}">✕</button></td>
         </tr>
@@ -116,11 +117,11 @@ function renderColorSizeTable() {
     })
     .join("");
 
-  const sizeTotals = SIZES.map((s) => colors.reduce((sum, c) => sum + (Number(c.qty[s]) || 0), 0));
-  const grandTotal = sizeTotals.reduce((a, b) => a + b, 0);
+  const catTotals = CATEGORIES.map((cat) => colors.reduce((sum, c) => sum + (Number(c.qty[cat]) || 0), 0));
+  const grandTotal = catTotals.reduce((a, b) => a + b, 0);
   el("colorSizeFoot").innerHTML =
     `<td style="text-align:left; font-weight:bold;">Total</td>` +
-    sizeTotals.map((t) => `<td class="cost-cell">${t}</td>`).join("") +
+    catTotals.map((t) => `<td class="cost-cell">${t}</td>`).join("") +
     `<td class="cost-cell" id="colorSizeGrandTotal">${grandTotal}</td><td></td>`;
 
   renderCostSummary();
@@ -133,16 +134,16 @@ el("colorSizeBody").addEventListener("input", (e) => {
     colors[idx].name = t.value;
     return;
   }
-  if (t.dataset.size) {
-    colors[idx].qty[t.dataset.size] = Number(t.value) || 0;
-    const rowTotal = SIZES.reduce((sum, s) => sum + (Number(colors[idx].qty[s]) || 0), 0);
+  if (t.dataset.cat) {
+    colors[idx].qty[t.dataset.cat] = Number(t.value) || 0;
+    const rowTotal = CATEGORIES.reduce((sum, cat) => sum + (Number(colors[idx].qty[cat]) || 0), 0);
     const cell = document.querySelector(`[data-row-total="${idx}"]`);
     if (cell) cell.textContent = rowTotal;
-    const sizeTotals = SIZES.map((s) => colors.reduce((sum, c) => sum + (Number(c.qty[s]) || 0), 0));
+    const catTotals = CATEGORIES.map((cat) => colors.reduce((sum, c) => sum + (Number(c.qty[cat]) || 0), 0));
     document.querySelectorAll("#colorSizeFoot td.cost-cell").forEach((cell, i) => {
-      if (i < sizeTotals.length) cell.textContent = sizeTotals[i];
+      if (i < catTotals.length) cell.textContent = catTotals[i];
     });
-    const grandTotal = sizeTotals.reduce((a, b) => a + b, 0);
+    const grandTotal = catTotals.reduce((a, b) => a + b, 0);
     el("colorSizeGrandTotal").textContent = grandTotal;
     renderCostSummary();
   }
@@ -161,7 +162,7 @@ el("addColorBtn").addEventListener("click", () => {
 });
 
 function totalPcs() {
-  return colors.reduce((sum, c) => sum + SIZES.reduce((s2, sz) => s2 + (Number(c.qty[sz]) || 0), 0), 0);
+  return colors.reduce((sum, c) => sum + (Number(c.qty.A) || 0) + (Number(c.qty.B) || 0), 0);
 }
 
 // ---- Rendering: parts & components ----
@@ -492,7 +493,7 @@ function resetForm() {
   // New styles default to a quantity of 1, since the real order total now
   // comes from what production enters - this just keeps costing/margin
   // figures meaningful (per-piece) before an actual order qty is known.
-  colors = [{ name: "Default", qty: { ...defaultSizeQty(), [SIZES[0]]: 1 } }];
+  colors = [{ name: "Default", qty: { A: 1, B: 0 } }];
   parts = defaultParts();
   styleActuals = [];
   el("formTitle").textContent = "New Style - Design & Component Sheet";

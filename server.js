@@ -18,8 +18,9 @@ const SESSION_COOKIE = "owner_session";
 const APPROVER_SESSION_COOKIE = "approver_session";
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours
 
-const SIZES = ["40", "42", "44", "46", "48", "50", "52"];
-// Matches the production page's cut-planning categories: A = 40-46, B = 48-52.
+const CATEGORIES = ["A", "B"];
+// Legacy size sets, kept only to migrate old per-size records (order qty,
+// actuals, sales) into the current Category A/B grain on read.
 const RATIO_CATEGORY_SIZES = { A: ["40", "42", "44", "46"], B: ["48", "50", "52"] };
 function categoryForSize(size) {
   if (RATIO_CATEGORY_SIZES.A.includes(size)) return "A";
@@ -164,18 +165,36 @@ app.use(express.static(path.join(__dirname, "public")));
 // ---- Data model ----
 // Each style has three optional "parts" (kurta / pant / dupatta). Each part
 // has its own list of rows, of two types:
-//   - "Fabric" rows carry a consumption figure per size (grading).
+//   - "Fabric" rows carry one average consumption figure.
 //   - "Process" rows (Cutting, Stitching, Embroidery, job-work, etc.) carry
-//     one flat consumption ("Average") used for every size, plus vendor/
-//     bill/received tracking, matching how the client's own sheet works.
-// Order quantity is a color x size grid rather than a single number.
+//     one flat consumption ("Average"), plus vendor/bill/received tracking,
+//     matching how the client's own sheet works.
+// Order quantity is a color x Category (A/B) grid rather than a single number.
 
-function defaultSizeQty() {
-  return Object.fromEntries(SIZES.map((s) => [s, 0]));
+function defaultCatQty() {
+  return { A: 0, B: 0 };
 }
 
 function defaultColor() {
-  return { name: "", qty: defaultSizeQty() };
+  return { name: "", qty: defaultCatQty() };
+}
+
+// Older records kept order qty keyed by exact size; fold those into the two
+// category totals so nothing is lost.
+function migrateColorQty(qty) {
+  if (!qty || typeof qty !== "object") return defaultCatQty();
+  if ("A" in qty || "B" in qty) {
+    return { A: Number(qty.A) || 0, B: Number(qty.B) || 0 };
+  }
+  let a = 0;
+  let b = 0;
+  for (const [size, val] of Object.entries(qty)) {
+    const n = Number(val) || 0;
+    const cat = categoryForSize(size);
+    if (cat === "A") a += n;
+    else if (cat === "B") b += n;
+  }
+  return { A: a, B: b };
 }
 
 // Design approval has a send/review workflow: "Not Sent" -> owner still
@@ -272,7 +291,7 @@ function defaultParts() {
 }
 
 function styleTotalPcs(style) {
-  return (style.colors || []).reduce((sum, c) => sum + SIZES.reduce((s2, sz) => s2 + (Number(c.qty[sz]) || 0), 0), 0);
+  return (style.colors || []).reduce((sum, c) => sum + (Number(c.qty.A) || 0) + (Number(c.qty.B) || 0), 0);
 }
 
 // Upgrades a component to the current Fabric/Process shape without
@@ -348,15 +367,25 @@ function migrateStyle(style) {
   if (!Array.isArray(colors)) {
     // Pre-color-grid styles stored a single flat orderQty number; preserve
     // the total under one placeholder color so nothing is lost, and flag it
-    // for the owner to redistribute across actual colors/sizes.
+    // for the owner to redistribute across actual colors/categories.
     const legacyQty = Number(style.orderQty) || 0;
     const color = defaultColor();
     if (legacyQty > 0) {
       color.name = "Unspecified (migrated)";
-      color.qty[SIZES[0]] = legacyQty;
+      color.qty.A = legacyQty;
     }
     colors = legacyQty > 0 ? [color] : [];
+  } else {
+    // Older records kept qty per exact size; fold those into category totals.
+    colors = colors.map((c) => ({ name: c.name, qty: migrateColorQty(c.qty) }));
   }
+
+  // Older actuals were logged per exact size before this was category-based;
+  // derive the category from that size so history/inventory show it directly.
+  const actuals = (Array.isArray(style.actuals) ? style.actuals : []).map((a) => ({
+    ...a,
+    category: CATEGORIES.includes(a.category) ? a.category : categoryForSize(a.size) || CATEGORIES[0],
+  }));
 
   const { orderQty, ...rest } = style;
   return {
@@ -366,23 +395,24 @@ function migrateStyle(style) {
     patti: style.patti || "",
     colors,
     parts,
+    actuals,
     designApproval: parseApproval(style.designApproval, defaultApproval("Not Sent"), DESIGN_APPROVAL_STATUSES),
     varianceApproval: parseApproval(style.varianceApproval, defaultApproval("Pending"), VARIANCE_APPROVAL_STATUSES),
     sales: Array.isArray(style.sales) ? style.sales : [],
   };
 }
 
-// Inventory = produced (from production's actuals, size-level) minus sold
-// (from sales, which are recorded at the Category A/B level - see the cut
-// planner on the production page for what defines A vs B), rolled up to
-// color + category since that's the level sales actually happen at.
+// Inventory = produced (from production's actuals) minus sold (from sales),
+// both logged at the Category A/B level, rolled up to color + category.
 function computeInventory(style) {
   const key = (color, category) => `${color || ""}|||${category || ""}`;
   const produced = new Map();
   const sold = new Map();
 
   (style.actuals || []).forEach((entry) => {
-    const category = categoryForSize(entry.size);
+    // Older entries were logged per exact size before this was category-based;
+    // derive the category from that size so nothing is lost.
+    const category = entry.category || categoryForSize(entry.size);
     if (!category) return;
     const k = key(entry.color, category);
     produced.set(k, (produced.get(k) || 0) + (Number(entry.actualProducedQty) || 0));
@@ -401,7 +431,7 @@ function computeInventory(style) {
     const [color, category] = k.split("|||");
     const p = produced.get(k) || 0;
     const s = sold.get(k) || 0;
-    return { color, category, sizes: RATIO_CATEGORY_SIZES[category] || [], produced: p, sold: s, balance: p - s };
+    return { color, category, produced: p, sold: s, balance: p - s };
   });
   byColorCategory.sort((a, b) => a.color.localeCompare(b.color) || a.category.localeCompare(b.category));
 
@@ -581,7 +611,7 @@ function parseColors(raw) {
     .filter((c) => c && String(c.name || "").trim() !== "")
     .map((c) => ({
       name: c.name,
-      qty: Object.fromEntries(SIZES.map((s) => [s, Number(c.qty?.[s]) || 0])),
+      qty: { A: Number(c.qty?.A) || 0, B: Number(c.qty?.B) || 0 },
     }));
 }
 
@@ -714,7 +744,7 @@ app.post("/api/styles/:id/actuals", (req, res) => {
   const entry = {
     id: crypto.randomUUID(),
     color: body.color || "",
-    size: SIZES.includes(body.size) ? body.size : SIZES[0],
+    category: CATEGORIES.includes(body.category) ? body.category : CATEGORIES[0],
     filledBy: body.filledBy || "",
     productionDate: body.productionDate || "",
     actualProducedQty: Number(body.actualProducedQty) || 0,

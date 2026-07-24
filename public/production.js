@@ -1,11 +1,10 @@
-const SIZES = ["40", "42", "44", "46", "48", "50", "52"];
+const CATEGORIES = ["A", "B"];
+const CATEGORY_LABELS = { A: "Category A", B: "Category B" };
 const PART_KEYS = ["kurta", "pant", "dupatta"];
 const PART_LABELS = { kurta: "Kurta", pant: "Pant", dupatta: "Dupatta" };
-const RATIO_CATEGORY_A_SIZES = ["40", "42", "44", "46"];
-const RATIO_CATEGORY_B_SIZES = ["48", "50", "52"];
 
 let currentStyle = null;
-let selectedSize = SIZES[0];
+let selectedCategory = CATEGORIES[0];
 let selectedColor = "";
 let actualData = {}; // { kurta: [{type,description,uom,estConsumption,actualConsumption}], pant:[...], dupatta:[...] }
 
@@ -22,7 +21,7 @@ function escapeAttr(s) {
   return String(s ?? "").replace(/"/g, "&quot;");
 }
 
-el("sizeSelect").innerHTML = SIZES.map((s) => `<option value="${s}">${s}</option>`).join("");
+el("categorySelect").innerHTML = CATEGORIES.map((c) => `<option value="${c}">${CATEGORY_LABELS[c]}</option>`).join("");
 
 async function loadStyleList(selectId) {
   const res = await fetch("/api/styles");
@@ -161,13 +160,13 @@ function renderRatioPlanning() {
 
   el("ratioBody").innerHTML = `
     <tr>
-      <td style="text-align:left;">40-42-44-46</td>
+      <td style="text-align:left;">Category A</td>
       <td>${pctA.toFixed(0)}%</td>
       <td style="font-weight:bold;">${piecesA}</td>
       <td>${fabricUsedA.toFixed(2)} ${uom}</td>
     </tr>
     <tr>
-      <td style="text-align:left;">48-50-52</td>
+      <td style="text-align:left;">Category B</td>
       <td>${pctB.toFixed(0)}%</td>
       <td style="font-weight:bold;">${piecesB}</td>
       <td>${fabricUsedB.toFixed(2)} ${uom}</td>
@@ -198,7 +197,7 @@ async function openStyle(id) {
   el("infoBuyer").textContent = s.buyer || "-";
   el("infoSeason").textContent = s.season || "-";
   el("infoOrderType").textContent = s.orderType || "-";
-  const totalQty = (s.colors || []).reduce((sum, c) => sum + SIZES.reduce((s2, sz) => s2 + (Number(c.qty[sz]) || 0), 0), 0);
+  const totalQty = (s.colors || []).reduce((sum, c) => sum + (Number(c.qty.A) || 0) + (Number(c.qty.B) || 0), 0);
   el("infoTotalQty").textContent = totalQty ? totalQty.toLocaleString() : "-";
 
   const colorNames = (s.colors || []).map((c) => c.name).filter(Boolean);
@@ -225,7 +224,7 @@ async function openStyle(id) {
   el("actualQty").value = "";
   el("prodDate").value = new Date().toISOString().slice(0, 10);
   el("filledBy").value = "";
-  el("sizeSelect").value = selectedSize;
+  el("categorySelect").value = selectedCategory;
 
   const approved = s.designApprovalStatus === "Approved";
   el("notApprovedBanner").style.display = approved ? "none" : "block";
@@ -368,12 +367,8 @@ el("partsActualContainer").addEventListener(
   true
 );
 
-el("sizeSelect").addEventListener("change", (e) => {
-  selectedSize = e.target.value;
-  if (currentStyle) {
-    buildActualLines();
-    renderPartsActual();
-  }
+el("categorySelect").addEventListener("change", (e) => {
+  selectedCategory = e.target.value;
 });
 
 el("colorSelect").addEventListener("change", (e) => {
@@ -396,7 +391,7 @@ function renderHistory() {
       const linesHtml = e.lines
         .map((l) => `${escapeAttr(l.part ? PART_LABELS[l.part] + " - " : "")}${escapeAttr(l.description)}: ${l.actualConsumption} ${escapeAttr(l.uom)} used (expected ${l.estConsumption} for ${e.actualProducedQty} pcs)`)
         .join(" · ");
-      return `<div class="hist-item"><strong>${e.productionDate || "-"}</strong> · ${escapeAttr(e.color || "-")} / Size ${escapeAttr(e.size || "-")} · Produced ${e.actualProducedQty} pcs · Filled by ${escapeAttr(e.filledBy || "-")}<br/>${linesHtml}</div>`;
+      return `<div class="hist-item"><strong>${e.productionDate || "-"}</strong> · ${escapeAttr(e.color || "-")} / ${escapeAttr(CATEGORY_LABELS[e.category] || "-")} · Produced ${e.actualProducedQty} pcs · Filled by ${escapeAttr(e.filledBy || "-")}<br/>${linesHtml}</div>`;
     })
     .join("");
 }
@@ -424,7 +419,7 @@ async function saveActuals() {
 
   const payload = {
     color: selectedColor,
-    size: selectedSize,
+    category: selectedCategory,
     filledBy: el("filledBy").value.trim(),
     productionDate: el("prodDate").value,
     actualProducedQty: Number(el("actualQty").value) || 0,
