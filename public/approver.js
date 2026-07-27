@@ -146,6 +146,7 @@ function renderParts(s) {
               <td>${row.consumption}</td>
               <td>${escapeAttr(row.vendor || "-")}</td>
               <td>${escapeAttr(row.billNo || "-")}</td>
+              <td>${row.type === "Process" ? row.billedQty || 0 : "-"}</td>
               <td>${row.received ? "Yes" : "-"}</td>
             </tr>
           `
@@ -158,7 +159,7 @@ function renderParts(s) {
             <table class="comp-table">
               <thead>
                 <tr>
-                  <th>Type</th><th>Description</th><th>UOM</th><th>Rate</th><th>Consumption</th><th>Vendor</th><th>Bill No.</th><th>Received</th>
+                  <th>Type</th><th>Description</th><th>UOM</th><th>Rate</th><th>Consumption</th><th>Vendor</th><th>Bill No.</th><th>Actual Billed Qty</th><th>Received</th>
                 </tr>
               </thead>
               <tbody>${rows}</tbody>

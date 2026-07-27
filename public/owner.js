@@ -57,11 +57,11 @@ function defaultFabricRow() {
 }
 
 function defaultCustomRow() {
-  return { type: "Process", description: "", uom: "Pcs", rate: 0, consumption: 0, vendor: "", billNo: "", received: false, custom: true };
+  return { type: "Process", description: "", uom: "Pcs", rate: 0, consumption: 0, vendor: "", billNo: "", received: false, billedQty: 0, custom: true };
 }
 
 function defaultProcessRow(name) {
-  return { type: "Process", description: name, uom: "Pcs", rate: 0, consumption: 1, vendor: "", billNo: "", received: false };
+  return { type: "Process", description: name, uom: "Pcs", rate: 0, consumption: 1, vendor: "", billNo: "", received: false, billedQty: 0 };
 }
 
 function defaultFixedComponents() {
@@ -199,6 +199,7 @@ function renderPartTable(partKey) {
             <th style="width:110px;">Avg Consumption</th>
             <th style="width:120px;">Vendor</th>
             <th style="width:100px;">Bill No.</th>
+            <th style="width:100px;">Actual Billed Qty</th>
             <th style="width:70px;">Received</th>
             <th style="width:36px;"></th>
           </tr>
@@ -221,6 +222,9 @@ function renderComponentRow(partKey, row, idx) {
   const billCell = isFabric
     ? `<span style="color:var(--muted); font-size:12px;">-</span>`
     : `<input data-part="${partKey}" data-idx="${idx}" data-field="billNo" value="${escapeAttr(row.billNo)}" placeholder="Bill No." style="max-width:100px;" />`;
+  const billedQtyCell = isFabric
+    ? `<span style="color:var(--muted); font-size:12px;">-</span>`
+    : `<input data-part="${partKey}" data-idx="${idx}" data-field="billedQty" type="number" step="0.01" min="0" value="${row.billedQty || 0}" style="max-width:90px;" />`;
   const receivedCell = isFabric
     ? `<span style="color:var(--muted); font-size:12px;">-</span>`
     : `<input data-part="${partKey}" data-idx="${idx}" data-field="received" type="checkbox" ${row.received ? "checked" : ""} />`;
@@ -244,6 +248,7 @@ function renderComponentRow(partKey, row, idx) {
       <td><input data-part="${partKey}" data-idx="${idx}" data-field="consumption" type="number" step="0.01" min="0" value="${row.consumption}" style="max-width:90px;" /></td>
       <td>${vendorCell}</td>
       <td>${billCell}</td>
+      <td>${billedQtyCell}</td>
       <td style="text-align:center;">${receivedCell}</td>
       <td>${removeCell}</td>
     </tr>
@@ -380,7 +385,7 @@ el("partsContainer").addEventListener("input", (e) => {
   const field = t.dataset.field;
   if (!field) return;
   const row = parts[t.dataset.part].components[Number(t.dataset.idx)];
-  if (field === "consumption" || field === "rate") {
+  if (field === "consumption" || field === "rate" || field === "billedQty") {
     row[field] = Number(t.value) || 0;
   } else if (field === "received") {
     row.received = t.checked;

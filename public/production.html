@@ -17,6 +17,15 @@
 <main>
   <section class="panel">
     <h2>Select Style</h2>
+    <input id="styleSearch" type="search" placeholder="Search style no, name, buyer..." style="width:100%; margin-bottom:8px; box-sizing:border-box;" />
+    <div class="form-grid" style="grid-template-columns: 1fr; margin-bottom:8px;">
+      <div class="field" style="margin:0;">
+        <select id="styleFilter" style="width:100%;">
+          <option value="all">All Styles</option>
+          <option value="new">New Approved Orders (not started)</option>
+        </select>
+      </div>
+    </div>
     <ul class="style-list" id="styleList"></ul>
   </section>
 

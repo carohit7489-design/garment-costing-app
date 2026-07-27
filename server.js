@@ -231,7 +231,7 @@ function defaultFabricRow() {
 }
 
 function defaultProcessRow(name) {
-  return { type: "Process", description: name, uom: "Pcs", rate: 0, consumption: 1, vendor: "", billNo: "", received: false };
+  return { type: "Process", description: name, uom: "Pcs", rate: 0, consumption: 1, vendor: "", billNo: "", received: false, billedQty: 0 };
 }
 
 function defaultFixedComponents() {

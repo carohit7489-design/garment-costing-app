@@ -7,6 +7,8 @@ let currentStyle = null;
 let selectedCategory = CATEGORIES[0];
 let selectedColor = "";
 let actualData = {}; // { kurta: [{type,description,uom,estConsumption,actualConsumption}], pant:[...], dupatta:[...] }
+let allStyles = [];
+let selectedStyleId = null;
 
 const el = (id) => document.getElementById(id);
 
@@ -25,28 +27,56 @@ el("categorySelect").innerHTML = CATEGORIES.map((c) => `<option value="${c}">${C
 
 async function loadStyleList(selectId) {
   const res = await fetch("/api/styles");
-  const styles = await res.json();
+  allStyles = await res.json();
+  selectedStyleId = selectId;
+  renderStyleList();
+}
+
+// Search box + "New Approved Orders" filter both act on the same fetched
+// list, so switching between them (or clearing search) never needs a re-fetch.
+function renderStyleList() {
   const list = el("styleList");
   list.innerHTML = "";
-  if (styles.length === 0) {
+
+  if (allStyles.length === 0) {
     list.innerHTML = '<li class="empty-state" style="cursor:default;">No styles yet. Ask the owner to create a component sheet first.</li>';
     return;
   }
-  styles
-    .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
-    .forEach((s) => {
-      const li = document.createElement("li");
-      li.className = s.id === selectId ? "active" : "";
-      const approvalColor = s.designApprovalStatus === "Approved" ? "#1a7a3c" : s.designApprovalStatus === "Rejected" ? "var(--red)" : "var(--muted)";
-      li.innerHTML = `
-        <div class="sname">${escapeAttr(s.styleNo)} - ${escapeAttr(s.styleName)}</div>
-        <div class="smeta">${escapeAttr(s.buyer || "-")} · ${escapeAttr(s.orderType)} · ${s.totalPcs} pcs · ${s.componentCount} rows · ${s.actualsCount} production entries</div>
-        <div class="smeta" style="color:${approvalColor}; font-weight:bold;">Design: ${escapeAttr(s.designApprovalStatus)}</div>
-      `;
-      li.addEventListener("click", () => openStyle(s.id));
-      list.appendChild(li);
-    });
+
+  const search = el("styleSearch").value.trim().toLowerCase();
+  const filter = el("styleFilter").value;
+
+  let styles = allStyles.slice().sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+  if (filter === "new") {
+    styles = styles.filter((s) => s.designApprovalStatus === "Approved" && s.actualsCount === 0);
+  }
+  if (search) {
+    styles = styles.filter((s) =>
+      [s.styleNo, s.styleName, s.buyer].some((v) => String(v || "").toLowerCase().includes(search))
+    );
+  }
+
+  if (styles.length === 0) {
+    list.innerHTML = '<li class="empty-state" style="cursor:default;">No styles match.</li>';
+    return;
+  }
+
+  styles.forEach((s) => {
+    const li = document.createElement("li");
+    li.className = s.id === selectedStyleId ? "active" : "";
+    const approvalColor = s.designApprovalStatus === "Approved" ? "#1a7a3c" : s.designApprovalStatus === "Rejected" ? "var(--red)" : "var(--muted)";
+    li.innerHTML = `
+      <div class="sname">${escapeAttr(s.styleNo)} - ${escapeAttr(s.styleName)}</div>
+      <div class="smeta">${escapeAttr(s.buyer || "-")} · ${escapeAttr(s.orderType)} · ${s.totalPcs} pcs · ${s.componentCount} rows · ${s.actualsCount} production entries</div>
+      <div class="smeta" style="color:${approvalColor}; font-weight:bold;">Design: ${escapeAttr(s.designApprovalStatus)}</div>
+    `;
+    li.addEventListener("click", () => openStyle(s.id));
+    list.appendChild(li);
+  });
 }
+
+el("styleSearch").addEventListener("input", renderStyleList);
+el("styleFilter").addEventListener("change", renderStyleList);
 
 function estConsumptionFor(component) {
   return Number(component.consumption) || 0;
@@ -248,58 +278,66 @@ function renderPartsActual() {
       (key) => `
         <div class="part-block">
           <div class="part-header"><label>${PART_LABELS[key]}</label></div>
-          ${renderPartActualTable(key)}
+          <h4 style="margin:10px 0 4px;">Fabric</h4>
+          ${renderPartActualTable(key, "Fabric")}
+          <h4 style="margin:16px 0 4px;">Job Work</h4>
+          ${renderPartActualTable(key, "Process")}
         </div>
       `
     )
     .join("");
 }
 
-function renderPartActualTable(partKey) {
-  const rows = actualData[partKey]
-    .map((row, idx) => {
+function renderPartActualTable(partKey, type) {
+  const isFabric = type === "Fabric";
+  const entries = actualData[partKey]
+    .map((row, idx) => ({ row, idx }))
+    .filter(({ row }) => row.type === type);
+
+  if (entries.length === 0) {
+    return `<div class="empty-state" style="padding:10px; font-size:12px;">No ${isFabric ? "fabric" : "job work"} line items priced for this part.</div>`;
+  }
+
+  const rows = entries
+    .map(({ row, idx }) => {
       const variance = row.actualConsumption === "" ? null : Number(row.actualConsumption) - row.estConsumption;
       const varianceText = variance === null ? "-" : (variance > 0 ? "+" : "") + variance.toFixed(2);
       const color = variance > 0 ? "#c0392b" : variance < 0 ? "#1a7a3c" : "#64748b";
-      const isProcess = row.type === "Process";
-      const vendorCell = isProcess
-        ? `<input data-part="${partKey}" data-idx="${idx}" data-status-field="vendor" value="${escapeAttr(row.vendor)}" placeholder="Vendor" style="max-width:110px;" />`
-        : `<span style="color:var(--muted); font-size:12px;">-</span>`;
-      const billCell = isProcess
-        ? `<input data-part="${partKey}" data-idx="${idx}" data-status-field="billNo" value="${escapeAttr(row.billNo)}" placeholder="Bill No." style="max-width:100px;" />`
-        : `<span style="color:var(--muted); font-size:12px;">-</span>`;
-      const receivedCell = isProcess
-        ? `<input data-part="${partKey}" data-idx="${idx}" data-status-field="received" type="checkbox" ${row.received ? "checked" : ""} />`
-        : `<span style="color:var(--muted); font-size:12px;">-</span>`;
+      const jobWorkCells = isFabric
+        ? ""
+        : `
+          <td><input data-part="${partKey}" data-idx="${idx}" data-status-field="vendor" value="${escapeAttr(row.vendor)}" placeholder="Vendor" style="max-width:110px;" /></td>
+          <td><input data-part="${partKey}" data-idx="${idx}" data-status-field="billNo" value="${escapeAttr(row.billNo)}" placeholder="Bill No." style="max-width:100px;" /></td>
+          <td style="text-align:center;"><input data-part="${partKey}" data-idx="${idx}" data-status-field="received" type="checkbox" ${row.received ? "checked" : ""} /></td>
+        `;
       return `
         <tr>
-          <td>${escapeAttr(row.type)}</td>
           <td>${escapeAttr(row.description)}</td>
           <td>${escapeAttr(row.uom)}</td>
           <td>${row.estConsumption.toFixed(2)}</td>
           <td><input class="actual-input" data-part="${partKey}" data-idx="${idx}" type="number" step="0.01" min="0" value="${row.actualConsumption}" placeholder="Total used" /></td>
           <td style="color:${color};" data-variance-cell="${partKey}-${idx}">${varianceText}</td>
-          <td>${vendorCell}</td>
-          <td>${billCell}</td>
-          <td style="text-align:center;">${receivedCell}</td>
+          ${jobWorkCells}
         </tr>
       `;
     })
     .join("");
+
+  const jobWorkHeaders = isFabric
+    ? ""
+    : `<th style="width:120px;">Vendor</th><th style="width:100px;">Bill No.</th><th style="width:70px;">Received</th>`;
+
   return `
     <div class="table-scroll">
       <table class="comp-table">
         <thead>
           <tr>
-            <th style="width:90px;">Type</th>
             <th style="min-width:140px;">Description</th>
             <th style="width:60px;">UOM</th>
             <th style="width:110px;">Expected Total (for entered pcs)</th>
             <th style="width:130px;">Actual Total Used</th>
             <th style="width:80px;">Variance</th>
-            <th style="width:120px;">Vendor</th>
-            <th style="width:100px;">Bill No.</th>
-            <th style="width:70px;">Received</th>
+            ${jobWorkHeaders}
           </tr>
         </thead>
         <tbody>${rows}</tbody>
