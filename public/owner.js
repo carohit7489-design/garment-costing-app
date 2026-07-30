@@ -164,7 +164,10 @@ el("colorSizeBody").addEventListener("input", (e) => {
     });
     const grandTotal = catTotals.reduce((a, b) => a + b, 0);
     el("colorSizeGrandTotal").textContent = grandTotal;
-    renderCostSummary();
+    // Total order qty changing shifts every Fabric row's derived Avg
+    // Consumption, so the whole parts table needs a full re-render.
+    recalcFabricConsumption();
+    renderParts();
   }
 });
 
@@ -182,6 +185,24 @@ el("addColorBtn").addEventListener("click", () => {
 
 function totalPcs() {
   return colors.reduce((sum, c) => sum + (Number(c.qty.A) || 0) + (Number(c.qty.B) || 0), 0);
+}
+
+// Avg Consumption on every Fabric row is derived, not typed in: Fabric Used
+// / total pieces ordered (all colors, both categories). Recalculated
+// whenever Fabric Used changes or the order-quantity grid changes. Only
+// overwrites Avg Consumption once Fabric Used is actually entered (> 0) -
+// otherwise leaves whatever figure is already there untouched, so older
+// styles with a manually-entered estimate (from before Fabric Used existed)
+// aren't silently zeroed out just for having no usage logged yet.
+function recalcFabricConsumption() {
+  const qty = totalPcs();
+  PART_KEYS.forEach((key) => {
+    parts[key].components.forEach((row) => {
+      if (row.type === "Fabric" && Number(row.fabricUsed) > 0) {
+        row.consumption = qty > 0 ? Number(row.fabricUsed) / qty : row.consumption;
+      }
+    });
+  });
 }
 
 // ---- Rendering: parts & components ----
@@ -291,12 +312,18 @@ function renderComponentRow(partKey, row, idx, isFabric) {
     ? `<button class="btn-small" type="button" data-action="remove-line-item" data-part="${partKey}" data-idx="${idx}">✕</button>`
     : "";
 
+  // Fabric's Avg Consumption is derived (Fabric Used / total pieces ordered)
+  // - read-only, never typed in directly. Process rows stay manually editable.
+  const consumptionCell = isFabric
+    ? `<span data-consumption-cell="${partKey}-${idx}" title="Fabric Used ÷ Total Order Qty (all colors)">${(Number(row.consumption) || 0).toFixed(4)}</span>`
+    : `<input data-part="${partKey}" data-idx="${idx}" data-field="consumption" type="number" step="0.01" min="0" value="${row.consumption}" style="max-width:90px;" />`;
+
   return `
     <tr>
       <td>${descriptionCell}</td>
       <td><input data-part="${partKey}" data-idx="${idx}" data-field="uom" value="${escapeAttr(row.uom)}" placeholder="Mtr/Pcs" /></td>
       <td><input data-part="${partKey}" data-idx="${idx}" data-field="rate" type="number" step="0.01" min="0" value="${row.rate}" /></td>
-      <td><input data-part="${partKey}" data-idx="${idx}" data-field="consumption" type="number" step="0.01" min="0" value="${row.consumption}" style="max-width:90px;" /></td>
+      <td>${consumptionCell}</td>
       ${fabricCells}
       ${jobWorkCells}
       <td>${removeCell}</td>
@@ -459,13 +486,21 @@ el("partsContainer").addEventListener("input", (e) => {
   }
   const field = t.dataset.field;
   if (!field) return;
-  const row = parts[t.dataset.part].components[Number(t.dataset.idx)];
+  const partKey = t.dataset.part;
+  const idx = Number(t.dataset.idx);
+  const row = parts[partKey].components[idx];
   if (field === "consumption" || field === "rate" || field === "billedQty" || field === "fabricUsed" || field === "fabricRemaining") {
     row[field] = Number(t.value) || 0;
   } else if (field === "received") {
     row.received = t.checked;
   } else {
     row[field] = t.value;
+  }
+  if (field === "fabricUsed" && row.fabricUsed > 0) {
+    const qty = totalPcs();
+    if (qty > 0) row.consumption = row.fabricUsed / qty;
+    const cell = document.querySelector(`[data-consumption-cell="${partKey}-${idx}"]`);
+    if (cell) cell.textContent = (Number(row.consumption) || 0).toFixed(4);
   }
   renderCostSummary();
 });
@@ -545,6 +580,7 @@ async function openStyle(id) {
   currentOrderType = s.orderType || "Bulk";
   colors = s.colors && s.colors.length ? s.colors : [];
   parts = s.parts;
+  recalcFabricConsumption();
   styleActuals = s.actuals || [];
   el("statusText").textContent = `Created ${new Date(s.createdAt).toLocaleString()} · Last updated ${new Date(s.updatedAt).toLocaleString()}`;
 
@@ -580,6 +616,7 @@ function resetForm() {
   // figures meaningful (per-piece) before an actual order qty is known.
   colors = [{ name: "Default", qty: { A: 1, B: 0 } }];
   parts = defaultParts();
+  recalcFabricConsumption();
   styleActuals = [];
   el("statusText").textContent = "";
 
