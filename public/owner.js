@@ -26,6 +26,13 @@ let existingDesignImagePath = null; // design image already saved on the server,
 let removeImageRequested = false;
 let styleActuals = []; // production entries for the currently loaded style, for variance analysis
 let designApproval = defaultApproval("Not Sent"); // read-only display; only changes via Send for Approval / the approver's decision
+// Buyer/Season/Currency/Order Type have no input on the Style Info section
+// anymore, but existing styles still carry them (shown elsewhere in the app)
+// - carried through untouched on save instead of being editable here.
+let currentBuyer = "";
+let currentSeason = "";
+let currentCurrency = "INR";
+let currentOrderType = "Bulk";
 
 function defaultApproval(status) {
   return { status, approverName: "", date: "", remarks: "" };
@@ -269,7 +276,7 @@ function renderCostSummary() {
   const head = el("costSummaryHead");
   head.innerHTML = `<th style="text-align:left;">Part</th><th>Cost / Garment</th>`;
 
-  const currency = el("currency").value || "";
+  const currency = currentCurrency || "";
   let rows = "";
   PART_KEYS.forEach((key) => {
     if (!parts[key].enabled) return;
@@ -423,8 +430,6 @@ el("partsContainer").addEventListener("click", (e) => {
   }
 });
 
-el("currency").addEventListener("input", renderCostSummary);
-
 // ---- Style list & load/save ----
 
 async function loadStyleList(selectId) {
@@ -459,14 +464,16 @@ async function openStyle(id) {
   currentStyleId = s.id;
   el("styleNo").value = s.styleNo;
   el("styleName").value = s.styleName;
-  el("buyer").value = s.buyer;
-  el("season").value = s.season;
-  el("currency").value = s.currency;
-  el("orderType").value = s.orderType || "Bulk";
+  el("pocket").value = s.pocket || "";
+  el("patti").value = s.patti || "";
+  el("printPatti").value = s.printPatti || "";
+  currentBuyer = s.buyer || "";
+  currentSeason = s.season || "";
+  currentCurrency = s.currency || "INR";
+  currentOrderType = s.orderType || "Bulk";
   colors = s.colors && s.colors.length ? s.colors : [];
   parts = s.parts;
   styleActuals = s.actuals || [];
-  el("formTitle").textContent = `Editing: ${s.styleNo} - ${s.styleName}`;
   el("statusText").textContent = `Created ${new Date(s.createdAt).toLocaleString()} · Last updated ${new Date(s.updatedAt).toLocaleString()}`;
 
   designApproval = s.designApproval || defaultApproval("Not Sent");
@@ -489,17 +496,19 @@ function resetForm() {
   currentStyleId = null;
   el("styleNo").value = "";
   el("styleName").value = "";
-  el("buyer").value = "";
-  el("season").value = "";
-  el("currency").value = "INR";
-  el("orderType").value = "Bulk";
+  el("pocket").value = "";
+  el("patti").value = "";
+  el("printPatti").value = "";
+  currentBuyer = "";
+  currentSeason = "";
+  currentCurrency = "INR";
+  currentOrderType = "Bulk";
   // New styles default to a quantity of 1, since the real order total now
   // comes from what production enters - this just keeps costing/margin
   // figures meaningful (per-piece) before an actual order qty is known.
   colors = [{ name: "Default", qty: { A: 1, B: 0 } }];
   parts = defaultParts();
   styleActuals = [];
-  el("formTitle").textContent = "New Style - Design & Component Sheet";
   el("statusText").textContent = "";
 
   designApproval = defaultApproval("Not Sent");
@@ -563,10 +572,13 @@ async function saveStyle() {
   const formData = new FormData();
   formData.append("styleNo", styleNo);
   formData.append("styleName", styleName);
-  formData.append("buyer", el("buyer").value.trim());
-  formData.append("season", el("season").value.trim());
-  formData.append("currency", el("currency").value.trim() || "INR");
-  formData.append("orderType", el("orderType").value);
+  formData.append("pocket", el("pocket").value.trim());
+  formData.append("patti", el("patti").value.trim());
+  formData.append("printPatti", el("printPatti").value.trim());
+  formData.append("buyer", currentBuyer);
+  formData.append("season", currentSeason);
+  formData.append("currency", currentCurrency || "INR");
+  formData.append("orderType", currentOrderType);
   formData.append("colors", JSON.stringify(colorsToSave));
   formData.append("parts", JSON.stringify(partsToSave));
   // designApproval is intentionally not sent here - it only changes via
