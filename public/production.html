@@ -90,6 +90,50 @@
         <div id="ratioEmptyState" class="empty-state" style="display:none;">This style has no fabric consumption data to plan cutting against.</div>
       </section>
 
+      <section class="panel" style="margin-top:16px;">
+        <h2>Layer Average (Actual Cutting Lay)</h2>
+        <p style="color:var(--muted); font-size:12px; margin-top:0;">Enter what was actually spread and cut for one lay to get the real average consumption per piece, split by category, compared against the costing sheet estimate.</p>
+        <div class="form-grid" style="grid-template-columns: repeat(4, 1fr);">
+          <div class="field">
+            <label>Part / Fabric</label>
+            <select id="layerPartSelect"></select>
+          </div>
+          <div class="field">
+            <label>Total Fabric Spread</label>
+            <input id="layerTotalFabric" type="number" min="0" step="0.01" placeholder="e.g. 1000" />
+          </div>
+          <div class="field">
+            <label>Category A - Pieces Obtained</label>
+            <input id="layerPiecesA" type="number" min="0" step="1" placeholder="e.g. 300" />
+          </div>
+          <div class="field">
+            <label>Category B - Pieces Obtained</label>
+            <input id="layerPiecesB" type="number" min="0" step="1" placeholder="e.g. 100" />
+          </div>
+        </div>
+        <div class="summary-bar" style="margin-bottom:12px;">
+          <div>Total Pieces Obtained<strong id="layerTotalPieces">-</strong></div>
+          <div>Per Piece Average (Actual)<strong id="layerActualAvg">-</strong></div>
+          <div>Costing Sheet Estimate<strong id="layerEstAvg">-</strong></div>
+          <div>Variance<strong id="layerVariance">-</strong></div>
+        </div>
+        <div class="table-scroll">
+          <table class="comp-table" id="layerTable">
+            <thead>
+              <tr>
+                <th style="text-align:left;">Category</th>
+                <th>Pieces Obtained</th>
+                <th>Share %</th>
+                <th>Fabric Allocated</th>
+              </tr>
+            </thead>
+            <tbody id="layerBody"></tbody>
+            <tfoot><tr id="layerFoot" style="font-weight:bold;"></tr></tfoot>
+          </table>
+        </div>
+        <div id="layerEmptyState" class="empty-state" style="display:none;">This style has no fabric consumption data to compare against.</div>
+      </section>
+
       <div id="notApprovedBanner" class="empty-state" style="display:none; background:#fdecea; border:1px solid #f5c2c0; border-radius:6px; color:var(--red); font-weight:bold;">
         This design has not been approved by the owner yet - actual consumption cannot be logged until it is.
       </div>

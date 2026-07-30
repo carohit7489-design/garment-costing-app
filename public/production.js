@@ -215,6 +215,84 @@ el("ratioTotalFabric").addEventListener("input", renderRatioPlanning);
 el("ratioAvgConsumption").addEventListener("input", renderRatioPlanning);
 el("ratioPctA").addEventListener("input", renderRatioPlanning);
 
+// ---- Layer average (actual cutting lay) ----
+// A pure what-if calculator - not saved anywhere. Given what was actually
+// spread and how many pieces of each category actually came out, works out
+// the real average consumption per piece and compares it to the costing
+// sheet's estimate.
+
+function populateLayerPartSelect() {
+  const options = PART_KEYS.filter((key) => {
+    const part = currentStyle.parts[key];
+    return part.enabled && part.components.some((c) => c.type === "Fabric");
+  });
+  el("layerPartSelect").innerHTML = options.map((k) => `<option value="${k}">${PART_LABELS[k]}</option>`).join("");
+  renderLayerAverage();
+}
+
+function layerFabricRow() {
+  const partKey = el("layerPartSelect").value;
+  if (!partKey || !currentStyle) return null;
+  const part = currentStyle.parts[partKey];
+  return part ? part.components.find((c) => c.type === "Fabric") || null : null;
+}
+
+function renderLayerAverage() {
+  const fabricRow = layerFabricRow();
+  if (!fabricRow) {
+    el("layerTable").style.display = "none";
+    el("layerEmptyState").style.display = "block";
+    return;
+  }
+  el("layerTable").style.display = "";
+  el("layerEmptyState").style.display = "none";
+
+  const uom = fabricRow.uom || "";
+  const totalFabric = Number(el("layerTotalFabric").value) || 0;
+  const piecesA = Number(el("layerPiecesA").value) || 0;
+  const piecesB = Number(el("layerPiecesB").value) || 0;
+  const totalPieces = piecesA + piecesB;
+  const actualAvg = totalPieces > 0 ? totalFabric / totalPieces : 0;
+  const estAvg = Number(fabricRow.consumption) || 0;
+  const variance = actualAvg - estAvg;
+
+  el("layerTotalPieces").textContent = totalPieces.toLocaleString();
+  el("layerActualAvg").textContent = totalPieces > 0 ? `${actualAvg.toFixed(2)} ${uom}` : "-";
+  el("layerEstAvg").textContent = `${estAvg.toFixed(2)} ${uom}`;
+  el("layerVariance").textContent = totalPieces > 0 ? `${(variance > 0 ? "+" : "") + variance.toFixed(2)} ${uom}` : "-";
+
+  const pctA = totalPieces > 0 ? (piecesA / totalPieces) * 100 : 0;
+  const pctB = totalPieces > 0 ? (piecesB / totalPieces) * 100 : 0;
+  const fabricA = piecesA * actualAvg;
+  const fabricB = piecesB * actualAvg;
+
+  el("layerBody").innerHTML = `
+    <tr>
+      <td style="text-align:left;">Category A</td>
+      <td style="font-weight:bold;">${piecesA}</td>
+      <td>${pctA.toFixed(0)}%</td>
+      <td>${fabricA.toFixed(2)} ${uom}</td>
+    </tr>
+    <tr>
+      <td style="text-align:left;">Category B</td>
+      <td style="font-weight:bold;">${piecesB}</td>
+      <td>${pctB.toFixed(0)}%</td>
+      <td>${fabricB.toFixed(2)} ${uom}</td>
+    </tr>
+  `;
+  el("layerFoot").innerHTML = `
+    <td style="text-align:left;">Total</td>
+    <td>${totalPieces}</td>
+    <td>100%</td>
+    <td>${(fabricA + fabricB).toFixed(2)} ${uom}</td>
+  `;
+}
+
+el("layerPartSelect").addEventListener("change", renderLayerAverage);
+el("layerTotalFabric").addEventListener("input", renderLayerAverage);
+el("layerPiecesA").addEventListener("input", renderLayerAverage);
+el("layerPiecesB").addEventListener("input", renderLayerAverage);
+
 async function openStyle(id) {
   const res = await fetch(`/api/styles/${id}/production-view`);
   if (!res.ok) return toast("Could not load style", true);
@@ -238,6 +316,11 @@ async function openStyle(id) {
 
   el("ratioTotalFabric").value = "";
   populateRatioPartSelect();
+
+  el("layerTotalFabric").value = "";
+  el("layerPiecesA").value = "";
+  el("layerPiecesB").value = "";
+  populateLayerPartSelect();
 
   const img = el("designPreview");
   const empty = el("designPreviewEmpty");
