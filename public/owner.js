@@ -327,10 +327,6 @@ async function sendForApproval() {
   await saveStyle();
   if (!currentStyleId) return; // save failed
   const res = await fetch(`/api/styles/${currentStyleId}/design-approval/send`, { method: "POST" });
-  if (res.status === 401) {
-    showLogin("Your session expired. Please log in again.");
-    return;
-  }
   if (!res.ok) {
     toast("Could not send for approval", true);
     return;
@@ -458,10 +454,6 @@ async function loadStyleList(selectId) {
 
 async function openStyle(id) {
   const res = await fetch(`/api/styles/${id}`);
-  if (res.status === 401) {
-    showLogin("Your session expired. Please log in again.");
-    return;
-  }
   if (!res.ok) return toast("Could not load style", true);
   const s = await res.json();
   currentStyleId = s.id;
@@ -596,10 +588,6 @@ async function saveStyle() {
   const url = currentStyleId ? `/api/styles/${currentStyleId}` : "/api/styles";
   const method = currentStyleId ? "PUT" : "POST";
   const res = await fetch(url, { method, body: formData });
-  if (res.status === 401) {
-    showLogin("Your session expired. Please log in again.");
-    return;
-  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     toast(err.error || "Save failed", true);
@@ -627,58 +615,5 @@ el("removeImageBtn").addEventListener("click", () => {
   updateDesignPreview(null);
 });
 
-// ---- Owner login gate ----
-
-function showApp() {
-  el("loginOverlay").style.display = "none";
-  el("appMain").style.display = "";
-  el("logoutLink").style.display = "inline-block";
-}
-
-function showLogin(message) {
-  el("loginOverlay").style.display = "flex";
-  el("appMain").style.display = "none";
-  el("logoutLink").style.display = "none";
-  el("loginError").textContent = message || "";
-}
-
-async function checkAuthAndInit() {
-  const res = await fetch("/api/owner/session");
-  const data = await res.json();
-  if (data.authenticated) {
-    showApp();
-    resetForm();
-    loadStyleList(null);
-  } else {
-    showLogin();
-  }
-}
-
-el("loginBtn").addEventListener("click", async () => {
-  const password = el("loginPassword").value;
-  const res = await fetch("/api/owner/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ password }),
-  });
-  if (res.ok) {
-    el("loginPassword").value = "";
-    showApp();
-    resetForm();
-    loadStyleList(null);
-  } else {
-    el("loginError").textContent = "Incorrect password";
-  }
-});
-
-el("loginPassword").addEventListener("keydown", (e) => {
-  if (e.key === "Enter") el("loginBtn").click();
-});
-
-el("logoutLink").addEventListener("click", async (e) => {
-  e.preventDefault();
-  await fetch("/api/owner/logout", { method: "POST" });
-  showLogin();
-});
-
-checkAuthAndInit();
+resetForm();
+loadStyleList(null);

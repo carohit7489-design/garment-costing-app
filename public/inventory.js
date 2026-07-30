@@ -42,10 +42,6 @@ async function loadStyleList(selectId) {
 
 async function openStyle(id) {
   const res = await fetch(`/api/styles/${id}`);
-  if (res.status === 401) {
-    showLogin("Your session expired. Please log in again.");
-    return;
-  }
   if (!res.ok) return toast("Could not load style", true);
   const s = await res.json();
   currentStyle = s;
@@ -185,10 +181,6 @@ async function recordSale() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  if (res.status === 401) {
-    showLogin("Your session expired. Please log in again.");
-    return;
-  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     toast(err.error || "Could not record sale", true);
@@ -200,56 +192,4 @@ async function recordSale() {
 
 el("recordSaleBtn").addEventListener("click", recordSale);
 
-// ---- Owner login gate (shares the owner login/session) ----
-
-function showApp() {
-  el("loginOverlay").style.display = "none";
-  el("appMain").style.display = "";
-  el("logoutLink").style.display = "inline-block";
-}
-
-function showLogin(message) {
-  el("loginOverlay").style.display = "flex";
-  el("appMain").style.display = "none";
-  el("logoutLink").style.display = "none";
-  el("loginError").textContent = message || "";
-}
-
-async function checkAuthAndInit() {
-  const res = await fetch("/api/owner/session");
-  const data = await res.json();
-  if (data.authenticated) {
-    showApp();
-    loadStyleList(null);
-  } else {
-    showLogin();
-  }
-}
-
-el("loginBtn").addEventListener("click", async () => {
-  const password = el("loginPassword").value;
-  const res = await fetch("/api/owner/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ password }),
-  });
-  if (res.ok) {
-    el("loginPassword").value = "";
-    showApp();
-    loadStyleList(null);
-  } else {
-    el("loginError").textContent = "Incorrect password";
-  }
-});
-
-el("loginPassword").addEventListener("keydown", (e) => {
-  if (e.key === "Enter") el("loginBtn").click();
-});
-
-el("logoutLink").addEventListener("click", async (e) => {
-  e.preventDefault();
-  await fetch("/api/owner/logout", { method: "POST" });
-  showLogin();
-});
-
-checkAuthAndInit();
+loadStyleList(null);

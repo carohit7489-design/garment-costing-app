@@ -14,7 +14,6 @@ const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : pat
 const DATA_FILE = path.join(DATA_DIR, "styles.json");
 const CONFIG_FILE = path.join(DATA_DIR, "config.json");
 const UPLOADS_DIR = path.join(DATA_DIR, "uploads");
-const SESSION_COOKIE = "owner_session";
 const APPROVER_SESSION_COOKIE = "approver_session";
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours
 
@@ -61,14 +60,13 @@ const upload = multer({
 
 app.use(express.json());
 
-// ---- Config (owner password) ----
-// OWNER_PASSWORD env var takes priority (set this in production); config.json
-// is a convenience fallback for local development only.
+// ---- Config (approver password) ----
+// APPROVER_PASSWORD env var takes priority (set this in production);
+// config.json is a convenience fallback for local development only.
 
 function readConfig() {
   const fileConfig = fs.existsSync(CONFIG_FILE) ? JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8").trim() || "{}") : {};
   return {
-    ownerPassword: process.env.OWNER_PASSWORD || fileConfig.ownerPassword,
     approverPassword: process.env.APPROVER_PASSWORD || fileConfig.approverPassword,
   };
 }
@@ -88,8 +86,8 @@ function parseCookies(req) {
 }
 
 // Sets up login/logout/session routes plus an auth-requiring middleware for
-// one role. Owner and Approver each get their own password, cookie, and
-// in-memory session store, so one login has no bearing on the other.
+// one role. Only Approver is gated this way now - Design & Costing and
+// Inventory are intentionally open, no login.
 function setupAuthRole({ roleName, cookieName, routePrefix, passwordField }) {
   const sessions = new Map(); // token -> expiry timestamp
 
@@ -142,7 +140,6 @@ function setupAuthRole({ roleName, cookieName, routePrefix, passwordField }) {
   return { isAuthenticated, requireAuth };
 }
 
-const ownerAuth = setupAuthRole({ roleName: "Owner", cookieName: SESSION_COOKIE, routePrefix: "owner", passwordField: "ownerPassword" });
 const approverAuth = setupAuthRole({
   roleName: "Approver",
   cookieName: APPROVER_SESSION_COOKIE,
@@ -150,13 +147,7 @@ const approverAuth = setupAuthRole({
   passwordField: "approverPassword",
 });
 
-const requireOwnerAuth = ownerAuth.requireAuth;
 const requireApproverAuth = approverAuth.requireAuth;
-
-function requireOwnerOrApproverAuth(req, res, next) {
-  if (ownerAuth.isAuthenticated(req) || approverAuth.isAuthenticated(req)) return next();
-  return res.status(401).json({ error: "Owner or Approver login required" });
-}
 
 app.get("/", (req, res) => res.redirect("/production.html"));
 
@@ -490,7 +481,7 @@ app.get("/api/styles", (req, res) => {
 
 // Full style detail includes pricing (rate/vendor/bill) - owner (editing) or
 // approver (reviewing) only, not the open production-view below.
-app.get("/api/styles/:id", requireOwnerOrApproverAuth, (req, res) => {
+app.get("/api/styles/:id", (req, res) => {
   const styles = readStyles();
   const style = styles.find((s) => s.id === req.params.id);
   if (!style) return res.status(404).json({ error: "Style not found" });
@@ -622,7 +613,7 @@ function deleteUploadedFile(designImagePath) {
   fs.unlink(filePath, () => {});
 }
 
-app.post("/api/styles", requireOwnerAuth, upload.single("designImage"), (req, res) => {
+app.post("/api/styles", upload.single("designImage"), (req, res) => {
   const body = req.body;
   if (!body.styleNo || !body.styleName) {
     return res.status(400).json({ error: "styleNo and styleName are required" });
@@ -652,7 +643,7 @@ app.post("/api/styles", requireOwnerAuth, upload.single("designImage"), (req, re
   res.status(201).json(style);
 });
 
-app.put("/api/styles/:id", requireOwnerAuth, upload.single("designImage"), (req, res) => {
+app.put("/api/styles/:id", upload.single("designImage"), (req, res) => {
   const styles = readStyles();
   const idx = styles.findIndex((s) => s.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error: "Style not found" });
@@ -691,7 +682,7 @@ app.put("/api/styles/:id", requireOwnerAuth, upload.single("designImage"), (req,
 // Owner submits the current design + costing for approval - saves whatever
 // the client already sent as the style's data, then puts it in the
 // approver's queue. Any previous decision/remarks are cleared for the new round.
-app.post("/api/styles/:id/design-approval/send", requireOwnerAuth, (req, res) => {
+app.post("/api/styles/:id/design-approval/send", (req, res) => {
   const styles = readStyles();
   const idx = styles.findIndex((s) => s.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error: "Style not found" });
@@ -756,10 +747,10 @@ app.post("/api/styles/:id/actuals", (req, res) => {
 });
 
 // ---- Sales (inventory dashboard) ----
-// Owner-only: recording a sale reduces the available balance for that
-// color+category, alongside whatever production has logged as produced.
+// Recording a sale reduces the available balance for that color+category,
+// alongside whatever production has logged as produced.
 
-app.post("/api/styles/:id/sales", requireOwnerAuth, (req, res) => {
+app.post("/api/styles/:id/sales", (req, res) => {
   const styles = readStyles();
   const idx = styles.findIndex((s) => s.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error: "Style not found" });
@@ -795,6 +786,6 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, () => {
   console.log(`Garment costing app running at http://localhost:${PORT}`);
-  console.log(`Owner page:      http://localhost:${PORT}/owner.html`);
+  console.log(`Design & Costing: http://localhost:${PORT}/owner.html`);
   console.log(`Production page: http://localhost:${PORT}/production.html`);
 });

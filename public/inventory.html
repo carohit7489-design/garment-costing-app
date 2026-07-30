@@ -10,25 +10,14 @@
 <header class="top">
   <h1>Garment Costing Module</h1>
   <nav>
-    <a href="owner.html">Owner - Design &amp; Costing</a>
+    <a href="owner.html">Design &amp; Costing</a>
     <a href="production.html">Production - Actual Consumption</a>
     <a href="approver.html">Approver Review</a>
     <a href="inventory.html" class="active">Inventory Dashboard</a>
-    <a href="#" id="logoutLink" style="display:none;">Log out</a>
   </nav>
 </header>
 
-<div class="login-overlay" id="loginOverlay">
-  <div class="login-box">
-    <h2>Owner Login</h2>
-    <p style="color:var(--muted); font-size:13px; margin-top:0;">Inventory balances are derived from costing/production data. Enter the owner password to continue.</p>
-    <input id="loginPassword" type="password" placeholder="Password" autocomplete="current-password" />
-    <button class="btn-primary" id="loginBtn" style="width:100%; margin-top:10px;">Login</button>
-    <div id="loginError" class="login-error"></div>
-  </div>
-</div>
-
-<main id="appMain" style="display:none;">
+<main id="appMain">
   <section class="panel">
     <h2>Styles</h2>
     <ul class="style-list" id="styleList"></ul>
