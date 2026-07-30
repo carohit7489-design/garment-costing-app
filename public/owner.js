@@ -243,10 +243,13 @@ function renderPartTable(partKey) {
 }
 
 function renderSegmentTable(partKey, entries, isFabric) {
-  const rows = entries.map(({ row, idx }) => renderComponentRow(partKey, row, idx, isFabric)).join("");
+  const rows = entries
+    .map(({ row, idx }, i) => renderComponentRow(partKey, row, idx, isFabric, i === 0, i === entries.length - 1))
+    .join("");
   const extraHeaders = isFabric
     ? `<th style="width:90px;">Fabric No.</th><th style="width:90px;">Fabric Used</th><th style="width:100px;">Remaining Fabric</th><th style="width:140px;">Image</th>`
     : `<th style="width:120px;">Vendor</th><th style="width:100px;">Bill No.</th><th style="width:100px;">Actual Billed Qty</th><th style="width:70px;">Received</th>`;
+  const reorderHeader = isFabric ? "" : `<th style="width:60px;">Order</th>`;
 
   return `
     <div class="table-scroll">
@@ -258,6 +261,7 @@ function renderSegmentTable(partKey, entries, isFabric) {
             <th style="width:80px;">Rate</th>
             <th style="width:110px;">Avg Consumption</th>
             ${extraHeaders}
+            ${reorderHeader}
             <th style="width:36px;"></th>
           </tr>
         </thead>
@@ -267,12 +271,20 @@ function renderSegmentTable(partKey, entries, isFabric) {
   `;
 }
 
-function renderComponentRow(partKey, row, idx, isFabric) {
-  const isOther = !row.custom && !isFabric && idx === FIXED_PROCESS_NAMES.length + 1; // last fixed row
+function renderComponentRow(partKey, row, idx, isFabric, isFirstProcess, isLastProcess) {
   const isCustom = !!row.custom;
   // The primary (non-custom) Fabric row is always at a stable position, so
   // it's the only one addressable by the per-part fabric-image endpoint.
   const isPrimaryFabric = isFabric && !isCustom;
+
+  const reorderCell = isFabric
+    ? ""
+    : `
+      <td style="white-space:nowrap;">
+        <button class="btn-small" type="button" data-action="move-process-up" data-part="${partKey}" data-idx="${idx}" ${isFirstProcess ? "disabled" : ""}>&uarr;</button>
+        <button class="btn-small" type="button" data-action="move-process-down" data-part="${partKey}" data-idx="${idx}" ${isLastProcess ? "disabled" : ""}>&darr;</button>
+      </td>
+    `;
 
   const jobWorkCells = isFabric
     ? ""
@@ -301,16 +313,16 @@ function renderComponentRow(partKey, row, idx, isFabric) {
       <td>${imageCell}</td>
     `;
 
-  // Fabric, "Other", and custom-added rows are free-text names; the fixed
-  // process rows in between are plain labels - nothing to choose or type.
-  const descriptionCell =
-    isFabric || isOther || isCustom
-      ? `<input data-part="${partKey}" data-idx="${idx}" data-field="description" value="${escapeAttr(row.description)}" placeholder="${isFabric ? "e.g. Self Fabric - Rayon" : "Line item name"}" />`
-      : `<span>${escapeAttr(row.description)}</span>`;
+  // Every line item's name is editable now - process rows are no longer
+  // locked to the fixed starting names, since they can be renamed, removed,
+  // and reordered freely.
+  const descriptionCell = `<input data-part="${partKey}" data-idx="${idx}" data-field="description" value="${escapeAttr(row.description)}" placeholder="${isFabric ? "e.g. Self Fabric - Rayon" : "Line item name"}" />`;
 
-  const removeCell = isCustom
-    ? `<button class="btn-small" type="button" data-action="remove-line-item" data-part="${partKey}" data-idx="${idx}">✕</button>`
-    : "";
+  // Fabric keeps the old custom-only removal (the primary row is load-bearing
+  // for the fabric-image upload); every Process row is removable now.
+  const removeCell = isFabric && !isCustom
+    ? ""
+    : `<button class="btn-small" type="button" data-action="remove-line-item" data-part="${partKey}" data-idx="${idx}">✕</button>`;
 
   // Fabric's Avg Consumption is derived (Fabric Used / total pieces ordered)
   // - read-only, never typed in directly. Process rows stay manually editable.
@@ -326,6 +338,7 @@ function renderComponentRow(partKey, row, idx, isFabric) {
       <td>${consumptionCell}</td>
       ${fabricCells}
       ${jobWorkCells}
+      ${reorderCell}
       <td>${removeCell}</td>
     </tr>
   `;
@@ -534,8 +547,31 @@ el("partsContainer").addEventListener("click", (e) => {
   const removeImgBtn = e.target.closest('button[data-action="remove-fabric-image"]');
   if (removeImgBtn) {
     removeFabricImage(removeImgBtn.dataset.part);
+    return;
+  }
+  const moveUpBtn = e.target.closest('button[data-action="move-process-up"]');
+  if (moveUpBtn) {
+    moveProcessRow(moveUpBtn.dataset.part, Number(moveUpBtn.dataset.idx), "up");
+    return;
+  }
+  const moveDownBtn = e.target.closest('button[data-action="move-process-down"]');
+  if (moveDownBtn) {
+    moveProcessRow(moveDownBtn.dataset.part, Number(moveDownBtn.dataset.idx), "down");
   }
 });
+
+// Reorders a Process row relative to other Process rows only - Fabric rows
+// aren't part of this ordering and keep their own position.
+function moveProcessRow(partKey, idx, direction) {
+  const components = parts[partKey].components;
+  const processIndices = components.map((r, i) => (r.type === "Process" ? i : -1)).filter((i) => i !== -1);
+  const pos = processIndices.indexOf(idx);
+  const swapPos = direction === "up" ? pos - 1 : pos + 1;
+  if (pos === -1 || swapPos < 0 || swapPos >= processIndices.length) return;
+  const otherIdx = processIndices[swapPos];
+  [components[idx], components[otherIdx]] = [components[otherIdx], components[idx]];
+  renderParts();
+}
 
 // ---- Style list & load/save ----
 

@@ -239,51 +239,24 @@ function defaultFixedComponents() {
   return [defaultFabricRow(), ...FIXED_PROCESS_NAMES.map(defaultProcessRow), defaultProcessRow("Other")];
 }
 
-// Reconciles a part's stored components against the fixed line-item list -
-// values entered against a matching name carry over; anything that doesn't
-// match a fixed name folds into the "Other" slot. Rows explicitly marked
-// `custom` are the owner's own added line items (via "Add Line Item") and
-// are preserved as-is, in order, after the fixed set - never dropped.
-function reconcileFixedComponents(existing) {
+// Keeps exactly one Fabric row pinned first (merged with defaults for any
+// missing field) since the per-part fabric-image upload depends on finding
+// it at a stable position. Everything else - every Process row, whether it
+// started as one of the fixed names or was added later - is preserved
+// as-is, in whatever order the owner last saved it in: they're free to
+// rename, delete, or reorder those without any of it being reconstructed.
+function reconcileComponents(existing) {
   let fabricRow = null;
-  const byName = new Map();
-  let otherSource = null;
-  const customRows = [];
+  const rest = [];
   for (const c of existing) {
-    if (c.custom) {
-      customRows.push(c);
-      continue;
-    }
-    if (c.type === "Fabric") {
-      if (!fabricRow) fabricRow = c;
-      continue;
-    }
-    const match = FIXED_PROCESS_NAMES.find((n) => n.toLowerCase() === String(c.description || "").trim().toLowerCase());
-    if (match && !byName.has(match)) {
-      byName.set(match, c);
-    } else if (!otherSource) {
-      otherSource = c;
+    if (c.type === "Fabric" && !c.custom && !fabricRow) {
+      fabricRow = c;
     } else {
-      // Shouldn't normally happen (the client always tags extras as custom),
-      // but preserve rather than silently discard.
-      customRows.push({ ...c, custom: true });
+      rest.push(c);
     }
   }
-
   const fabric = fabricRow ? { ...defaultFabricRow(), ...fabricRow, type: "Fabric" } : defaultFabricRow();
-  const processRows = FIXED_PROCESS_NAMES.map((name) => {
-    const row = byName.get(name);
-    return row ? { ...defaultProcessRow(name), ...row, description: name } : defaultProcessRow(name);
-  });
-  const otherRow = otherSource
-    ? { ...defaultProcessRow(otherSource.description || "Other"), ...otherSource }
-    : defaultProcessRow("Other");
-  const customRowsOut = customRows.map((c) => {
-    const base = c.type === "Fabric" ? defaultFabricRow() : defaultProcessRow(c.description || "");
-    return { ...base, ...c, custom: true };
-  });
-
-  return [fabric, ...processRows, otherRow, ...customRowsOut];
+  return [fabric, ...rest];
 }
 
 function defaultPart() {
@@ -364,7 +337,7 @@ function migrateStyle(style) {
       parts[key] = {
         enabled: !!part.enabled,
         sellingRate: Number(part.sellingRate) || 0,
-        components: reconcileFixedComponents((part.components || []).map(migrateComponent)),
+        components: reconcileComponents((part.components || []).map(migrateComponent)),
       };
     }
   } else {
@@ -624,7 +597,7 @@ function parseParts(raw) {
     parts[key] = {
       enabled: !!part.enabled,
       sellingRate: Number(part.sellingRate) || 0,
-      components: reconcileFixedComponents(components.map(migrateComponent)),
+      components: reconcileComponents(components.map(migrateComponent)),
     };
   }
   return parts;
