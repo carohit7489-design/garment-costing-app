@@ -31,9 +31,59 @@
 
       <div class="summary-bar">
         <div>Total Produced<strong id="sumProduced">-</strong></div>
+        <div>Transferred to Store<strong id="sumTransferred">-</strong></div>
+        <div>Rejected<strong id="sumRejected">-</strong></div>
         <div>Total Sold<strong id="sumSold">-</strong></div>
-        <div>Balance in Hand<strong id="sumBalance">-</strong></div>
+        <div>Balance in Store<strong id="sumBalance">-</strong></div>
       </div>
+
+      <section class="panel" style="margin-top:16px;">
+        <h2>Transfer to Store</h2>
+        <p style="color:var(--muted); font-size:12px; margin-top:0;">Produced pieces only count toward the store balance once transferred here.</p>
+        <div class="form-grid" style="grid-template-columns: repeat(3, 1fr);">
+          <div class="field">
+            <label>Qty Transferred</label>
+            <input id="transferQty" type="number" min="1" placeholder="e.g. 100" />
+          </div>
+          <div class="field">
+            <label>Date</label>
+            <input id="transferDate" type="date" />
+          </div>
+          <div class="field">
+            <label>Remarks</label>
+            <input id="transferRemarks" placeholder="Optional" />
+          </div>
+        </div>
+        <div class="actions-row">
+          <div></div>
+          <button class="btn-primary" type="button" id="recordTransferBtn">Record Transfer</button>
+        </div>
+        <div id="transferHistoryList" class="history-list" style="margin-top:12px;"></div>
+      </section>
+
+      <section class="panel" style="margin-top:16px;">
+        <h2>Rejected</h2>
+        <p style="color:var(--muted); font-size:12px; margin-top:0;">Rejected pieces are tracked separately and never count toward the store balance.</p>
+        <div class="form-grid" style="grid-template-columns: repeat(3, 1fr);">
+          <div class="field">
+            <label>Qty Rejected</label>
+            <input id="rejectQty" type="number" min="1" placeholder="e.g. 5" />
+          </div>
+          <div class="field">
+            <label>Date</label>
+            <input id="rejectDate" type="date" />
+          </div>
+          <div class="field">
+            <label>Remarks</label>
+            <input id="rejectRemarks" placeholder="e.g. Stitching defect" />
+          </div>
+        </div>
+        <div class="actions-row">
+          <div></div>
+          <button class="btn-primary" type="button" id="recordRejectBtn">Record Rejection</button>
+        </div>
+        <div id="rejectHistoryList" class="history-list" style="margin-top:12px;"></div>
+      </section>
 
       <section class="panel" style="margin-top:16px;">
         <h2>Record a Sale</h2>
@@ -63,7 +113,7 @@
             <button class="btn-primary" type="button" id="recordSaleBtn">Record Sale</button>
           </div>
         </div>
-        <div id="saleFormEmptyState" class="empty-state" style="display:none;">No production logged yet for this style - nothing to sell until production records actual consumption.</div>
+        <div id="saleFormEmptyState" class="empty-state" style="display:none;">Nothing transferred to store yet for this style - nothing to sell until stock is transferred in.</div>
       </section>
 
       <section class="panel" style="margin-top:16px;">

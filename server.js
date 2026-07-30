@@ -378,15 +378,20 @@ function migrateStyle(style) {
     designApproval: parseApproval(style.designApproval, defaultApproval("Not Sent"), DESIGN_APPROVAL_STATUSES),
     varianceApproval: parseApproval(style.varianceApproval, defaultApproval("Pending"), VARIANCE_APPROVAL_STATUSES),
     sales: Array.isArray(style.sales) ? style.sales : [],
+    transfers: Array.isArray(style.transfers) ? style.transfers : [],
+    rejections: Array.isArray(style.rejections) ? style.rejections : [],
   };
 }
 
-// Inventory is maintained style-wise only: produced (from production's
-// actuals, summed regardless of color/category) minus sold (from sales).
+// Inventory is maintained style-wise only. Produced pieces only become
+// available store stock once logged as "Transferred to Store" - Rejected
+// pieces are tracked separately and never count toward the balance.
 function computeInventory(style) {
   const produced = (style.actuals || []).reduce((sum, entry) => sum + (Number(entry.actualProducedQty) || 0), 0);
+  const transferred = (style.transfers || []).reduce((sum, entry) => sum + (Number(entry.qty) || 0), 0);
+  const rejected = (style.rejections || []).reduce((sum, entry) => sum + (Number(entry.qty) || 0), 0);
   const sold = (style.sales || []).reduce((sum, entry) => sum + (Number(entry.qtySold) || 0), 0);
-  return { produced, sold, balance: produced - sold };
+  return { produced, transferred, rejected, sold, balance: transferred - sold };
 }
 
 function readStyles() {
@@ -757,6 +762,56 @@ app.post("/api/styles/:id/sales", (req, res) => {
   };
   styles[idx].sales = styles[idx].sales || [];
   styles[idx].sales.push(entry);
+  styles[idx].updatedAt = new Date().toISOString();
+  writeStyles(styles);
+  res.status(201).json(entry);
+});
+
+// Produced pieces move into store balance only once logged here.
+app.post("/api/styles/:id/transfers", (req, res) => {
+  const styles = readStyles();
+  const idx = styles.findIndex((s) => s.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: "Style not found" });
+
+  const body = req.body;
+  if (!(Number(body.qty) > 0)) {
+    return res.status(400).json({ error: "a positive qty is required" });
+  }
+
+  const entry = {
+    id: crypto.randomUUID(),
+    qty: Number(body.qty),
+    date: body.date || new Date().toISOString().slice(0, 10),
+    remarks: body.remarks || "",
+    createdAt: new Date().toISOString(),
+  };
+  styles[idx].transfers = styles[idx].transfers || [];
+  styles[idx].transfers.push(entry);
+  styles[idx].updatedAt = new Date().toISOString();
+  writeStyles(styles);
+  res.status(201).json(entry);
+});
+
+// Rejected pieces are tracked separately - they never count toward store balance.
+app.post("/api/styles/:id/rejections", (req, res) => {
+  const styles = readStyles();
+  const idx = styles.findIndex((s) => s.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: "Style not found" });
+
+  const body = req.body;
+  if (!(Number(body.qty) > 0)) {
+    return res.status(400).json({ error: "a positive qty is required" });
+  }
+
+  const entry = {
+    id: crypto.randomUUID(),
+    qty: Number(body.qty),
+    date: body.date || new Date().toISOString().slice(0, 10),
+    remarks: body.remarks || "",
+    createdAt: new Date().toISOString(),
+  };
+  styles[idx].rejections = styles[idx].rejections || [];
+  styles[idx].rejections.push(entry);
   styles[idx].updatedAt = new Date().toISOString();
   writeStyles(styles);
   res.status(201).json(entry);

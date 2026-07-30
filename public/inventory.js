@@ -30,7 +30,7 @@ async function loadStyleList(selectId) {
       li.innerHTML = `
         <div class="sname">${escapeAttr(s.styleNo)} - ${escapeAttr(s.styleName)}</div>
         <div class="smeta">${escapeAttr(s.buyer || "-")} · ${s.totalPcs} pcs ordered</div>
-        <div class="smeta" style="color:var(--navy); font-weight:bold;">Balance in hand: ${s.inventoryBalance}</div>
+        <div class="smeta" style="color:var(--navy); font-weight:bold;">Balance in store: ${s.inventoryBalance}</div>
       `;
       li.addEventListener("click", () => openStyle(s.id));
       list.appendChild(li);
@@ -47,6 +47,14 @@ async function openStyle(id) {
   el("detailContent").style.display = "block";
   el("formTitle").textContent = `${s.styleNo} - ${s.styleName}`;
 
+  el("transferQty").value = "";
+  el("transferDate").value = new Date().toISOString().slice(0, 10);
+  el("transferRemarks").value = "";
+
+  el("rejectQty").value = "";
+  el("rejectDate").value = new Date().toISOString().slice(0, 10);
+  el("rejectRemarks").value = "";
+
   el("saleQty").value = "";
   el("saleDate").value = new Date().toISOString().slice(0, 10);
   el("saleBuyer").value = "";
@@ -54,12 +62,14 @@ async function openStyle(id) {
 
   renderSaleForm(s.inventory);
   renderInventory(s.inventory);
+  renderTransferHistory(s.transfers || []);
+  renderRejectHistory(s.rejections || []);
   renderSalesHistory(s.sales || []);
   loadStyleList(id);
 }
 
 function renderSaleForm(inv) {
-  if (inv.produced <= 0) {
+  if (inv.transferred <= 0) {
     el("saleForm").style.display = "none";
     el("saleFormEmptyState").style.display = "block";
     return;
@@ -71,8 +81,50 @@ function renderSaleForm(inv) {
 
 function renderInventory(inv) {
   el("sumProduced").textContent = inv.produced.toLocaleString();
+  el("sumTransferred").textContent = inv.transferred.toLocaleString();
+  el("sumRejected").textContent = inv.rejected.toLocaleString();
   el("sumSold").textContent = inv.sold.toLocaleString();
   el("sumBalance").textContent = inv.balance.toLocaleString();
+}
+
+function renderTransferHistory(transfers) {
+  const container = el("transferHistoryList");
+  if (transfers.length === 0) {
+    container.innerHTML = '<div class="empty-state">No transfers recorded yet for this style.</div>';
+    return;
+  }
+  container.innerHTML = transfers
+    .slice()
+    .reverse()
+    .map(
+      (t) => `
+        <div class="hist-item">
+          <strong>${escapeAttr(t.date)}</strong> · Transferred ${t.qty} pcs
+          ${t.remarks ? ` · ${escapeAttr(t.remarks)}` : ""}
+        </div>
+      `
+    )
+    .join("");
+}
+
+function renderRejectHistory(rejections) {
+  const container = el("rejectHistoryList");
+  if (rejections.length === 0) {
+    container.innerHTML = '<div class="empty-state">No rejections recorded yet for this style.</div>';
+    return;
+  }
+  container.innerHTML = rejections
+    .slice()
+    .reverse()
+    .map(
+      (r) => `
+        <div class="hist-item">
+          <strong>${escapeAttr(r.date)}</strong> · Rejected ${r.qty} pcs
+          ${r.remarks ? ` · ${escapeAttr(r.remarks)}` : ""}
+        </div>
+      `
+    )
+    .join("");
 }
 
 function renderSalesHistory(sales) {
@@ -93,6 +145,58 @@ function renderSalesHistory(sales) {
       `
     )
     .join("");
+}
+
+async function recordTransfer() {
+  if (!currentStyle) return;
+  const qty = Number(el("transferQty").value);
+  if (!qty || qty <= 0) {
+    toast("Enter a valid quantity", true);
+    return;
+  }
+  const payload = {
+    qty,
+    date: el("transferDate").value,
+    remarks: el("transferRemarks").value.trim(),
+  };
+  const res = await fetch(`/api/styles/${currentStyle.id}/transfers`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    toast(err.error || "Could not record transfer", true);
+    return;
+  }
+  toast("Transfer recorded");
+  openStyle(currentStyle.id);
+}
+
+async function recordReject() {
+  if (!currentStyle) return;
+  const qty = Number(el("rejectQty").value);
+  if (!qty || qty <= 0) {
+    toast("Enter a valid quantity", true);
+    return;
+  }
+  const payload = {
+    qty,
+    date: el("rejectDate").value,
+    remarks: el("rejectRemarks").value.trim(),
+  };
+  const res = await fetch(`/api/styles/${currentStyle.id}/rejections`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    toast(err.error || "Could not record rejection", true);
+    return;
+  }
+  toast("Rejection recorded");
+  openStyle(currentStyle.id);
 }
 
 async function recordSale() {
@@ -130,6 +234,8 @@ async function recordSale() {
   openStyle(currentStyle.id);
 }
 
+el("recordTransferBtn").addEventListener("click", recordTransfer);
+el("recordRejectBtn").addEventListener("click", recordReject);
 el("recordSaleBtn").addEventListener("click", recordSale);
 
 loadStyleList(null);
