@@ -60,12 +60,22 @@ function defaultColor() {
 }
 
 function defaultFabricRow() {
-  return { type: "Fabric", description: "Fabric", uom: "Mtr", rate: 0, consumption: 0 };
+  return {
+    type: "Fabric",
+    description: "Fabric",
+    uom: "Mtr",
+    rate: 0,
+    consumption: 0,
+    fabricNo: "",
+    fabricUsed: 0,
+    fabricRemaining: 0,
+    fabricImagePath: null,
+  };
 }
 
 function defaultCustomRow(type) {
   return type === "Fabric"
-    ? { type: "Fabric", description: "", uom: "Mtr", rate: 0, consumption: 0, custom: true }
+    ? { type: "Fabric", description: "", uom: "Mtr", rate: 0, consumption: 0, fabricNo: "", fabricUsed: 0, fabricRemaining: 0, custom: true }
     : { type: "Process", description: "", uom: "Pcs", rate: 0, consumption: 0, vendor: "", billNo: "", received: false, billedQty: 0, custom: true };
 }
 
@@ -213,8 +223,8 @@ function renderPartTable(partKey) {
 
 function renderSegmentTable(partKey, entries, isFabric) {
   const rows = entries.map(({ row, idx }) => renderComponentRow(partKey, row, idx, isFabric)).join("");
-  const jobWorkHeaders = isFabric
-    ? ""
+  const extraHeaders = isFabric
+    ? `<th style="width:90px;">Fabric No.</th><th style="width:90px;">Fabric Used</th><th style="width:100px;">Remaining Fabric</th><th style="width:140px;">Image</th>`
     : `<th style="width:120px;">Vendor</th><th style="width:100px;">Bill No.</th><th style="width:100px;">Actual Billed Qty</th><th style="width:70px;">Received</th>`;
 
   return `
@@ -226,7 +236,7 @@ function renderSegmentTable(partKey, entries, isFabric) {
             <th style="width:70px;">UOM</th>
             <th style="width:80px;">Rate</th>
             <th style="width:110px;">Avg Consumption</th>
-            ${jobWorkHeaders}
+            ${extraHeaders}
             <th style="width:36px;"></th>
           </tr>
         </thead>
@@ -239,6 +249,9 @@ function renderSegmentTable(partKey, entries, isFabric) {
 function renderComponentRow(partKey, row, idx, isFabric) {
   const isOther = !row.custom && !isFabric && idx === FIXED_PROCESS_NAMES.length + 1; // last fixed row
   const isCustom = !!row.custom;
+  // The primary (non-custom) Fabric row is always at a stable position, so
+  // it's the only one addressable by the per-part fabric-image endpoint.
+  const isPrimaryFabric = isFabric && !isCustom;
 
   const jobWorkCells = isFabric
     ? ""
@@ -247,6 +260,24 @@ function renderComponentRow(partKey, row, idx, isFabric) {
       <td><input data-part="${partKey}" data-idx="${idx}" data-field="billNo" value="${escapeAttr(row.billNo)}" placeholder="Bill No." style="max-width:100px;" /></td>
       <td><input data-part="${partKey}" data-idx="${idx}" data-field="billedQty" type="number" step="0.01" min="0" value="${row.billedQty || 0}" style="max-width:90px;" /></td>
       <td style="text-align:center;"><input data-part="${partKey}" data-idx="${idx}" data-field="received" type="checkbox" ${row.received ? "checked" : ""} /></td>
+    `;
+
+  const imageCell = !isPrimaryFabric
+    ? `<span style="color:var(--muted); font-size:12px;">-</span>`
+    : `
+      <div style="display:flex; align-items:center; gap:6px;">
+        ${row.fabricImagePath ? `<img src="${escapeAttr(row.fabricImagePath)}" style="width:32px; height:32px; object-fit:cover; border-radius:4px;" />` : `<span style="color:var(--muted); font-size:11px;">No image</span>`}
+        <input type="file" accept="image/*" data-action="fabric-image-input" data-part="${partKey}" style="max-width:100px; font-size:11px;" />
+        ${row.fabricImagePath ? `<button class="btn-small" type="button" data-action="remove-fabric-image" data-part="${partKey}">✕</button>` : ""}
+      </div>
+    `;
+  const fabricCells = !isFabric
+    ? ""
+    : `
+      <td><input data-part="${partKey}" data-idx="${idx}" data-field="fabricNo" value="${escapeAttr(row.fabricNo || "")}" placeholder="e.g. F-101" style="max-width:90px;" /></td>
+      <td><input data-part="${partKey}" data-idx="${idx}" data-field="fabricUsed" type="number" step="0.01" min="0" value="${row.fabricUsed || 0}" style="max-width:80px;" /></td>
+      <td><input data-part="${partKey}" data-idx="${idx}" data-field="fabricRemaining" type="number" step="0.01" min="0" value="${row.fabricRemaining || 0}" style="max-width:80px;" /></td>
+      <td>${imageCell}</td>
     `;
 
   // Fabric, "Other", and custom-added rows are free-text names; the fixed
@@ -266,10 +297,41 @@ function renderComponentRow(partKey, row, idx, isFabric) {
       <td><input data-part="${partKey}" data-idx="${idx}" data-field="uom" value="${escapeAttr(row.uom)}" placeholder="Mtr/Pcs" /></td>
       <td><input data-part="${partKey}" data-idx="${idx}" data-field="rate" type="number" step="0.01" min="0" value="${row.rate}" /></td>
       <td><input data-part="${partKey}" data-idx="${idx}" data-field="consumption" type="number" step="0.01" min="0" value="${row.consumption}" style="max-width:90px;" /></td>
+      ${fabricCells}
       ${jobWorkCells}
       <td>${removeCell}</td>
     </tr>
   `;
+}
+
+async function uploadFabricImage(partKey, file) {
+  if (!currentStyleId) {
+    toast("Save the component sheet first, then add a fabric image", true);
+    return;
+  }
+  const formData = new FormData();
+  formData.append("fabricImage", file);
+  const res = await fetch(`/api/styles/${currentStyleId}/parts/${partKey}/fabric-image`, { method: "POST", body: formData });
+  if (!res.ok) {
+    toast("Could not upload fabric image", true);
+    return;
+  }
+  const data = await res.json();
+  const fabricRow = parts[partKey].components.find((c) => c.type === "Fabric" && !c.custom);
+  if (fabricRow) fabricRow.fabricImagePath = data.fabricImagePath;
+  renderParts();
+  toast("Fabric image uploaded");
+}
+
+async function removeFabricImage(partKey) {
+  if (!currentStyleId) return;
+  const formData = new FormData();
+  formData.append("removeFabricImage", "true");
+  const res = await fetch(`/api/styles/${currentStyleId}/parts/${partKey}/fabric-image`, { method: "POST", body: formData });
+  if (!res.ok) return;
+  const fabricRow = parts[partKey].components.find((c) => c.type === "Fabric" && !c.custom);
+  if (fabricRow) fabricRow.fabricImagePath = null;
+  renderParts();
 }
 
 function renderCostSummary() {
@@ -398,7 +460,7 @@ el("partsContainer").addEventListener("input", (e) => {
   const field = t.dataset.field;
   if (!field) return;
   const row = parts[t.dataset.part].components[Number(t.dataset.idx)];
-  if (field === "consumption" || field === "rate" || field === "billedQty") {
+  if (field === "consumption" || field === "rate" || field === "billedQty" || field === "fabricUsed" || field === "fabricRemaining") {
     row[field] = Number(t.value) || 0;
   } else if (field === "received") {
     row.received = t.checked;
@@ -413,6 +475,11 @@ el("partsContainer").addEventListener("change", (e) => {
   if (t.dataset.action === "toggle-part") {
     parts[t.dataset.part].enabled = t.checked;
     renderParts();
+    return;
+  }
+  if (t.dataset.action === "fabric-image-input") {
+    const file = t.files[0];
+    if (file) uploadFabricImage(t.dataset.part, file);
   }
 });
 
@@ -427,6 +494,11 @@ el("partsContainer").addEventListener("click", (e) => {
   if (removeBtn) {
     parts[removeBtn.dataset.part].components.splice(Number(removeBtn.dataset.idx), 1);
     renderParts();
+    return;
+  }
+  const removeImgBtn = e.target.closest('button[data-action="remove-fabric-image"]');
+  if (removeImgBtn) {
+    removeFabricImage(removeImgBtn.dataset.part);
   }
 });
 

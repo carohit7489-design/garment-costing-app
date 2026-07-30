@@ -218,7 +218,17 @@ function parseApproval(raw, existing, validStatuses) {
 }
 
 function defaultFabricRow() {
-  return { type: "Fabric", description: "Fabric", uom: "Mtr", rate: 0, consumption: 0 };
+  return {
+    type: "Fabric",
+    description: "Fabric",
+    uom: "Mtr",
+    rate: 0,
+    consumption: 0,
+    fabricNo: "",
+    fabricUsed: 0,
+    fabricRemaining: 0,
+    fabricImagePath: null,
+  };
 }
 
 function defaultProcessRow(name) {
@@ -309,6 +319,10 @@ function migrateComponent(c) {
       uom: c.uom || "Mtr",
       rate: Number(c.rate) || 0,
       consumption,
+      fabricNo: c.fabricNo || "",
+      fabricUsed: Number(c.fabricUsed) || 0,
+      fabricRemaining: Number(c.fabricRemaining) || 0,
+      fabricImagePath: c.fabricImagePath || null,
       ...(c.custom ? { custom: true } : {}),
     };
   }
@@ -563,6 +577,33 @@ app.put("/api/styles/:id/parts/:partKey/components/:index/status", (req, res) =>
   styles[idx].updatedAt = new Date().toISOString();
   writeStyles(styles);
   res.json({ ok: true });
+});
+
+// Uploads (or removes) the image for a part's primary Fabric row. Only the
+// fixed Fabric row (never a custom one) is addressable this way, since that's
+// the only one guaranteed to stay at a stable position after reconciliation.
+app.post("/api/styles/:id/parts/:partKey/fabric-image", upload.single("fabricImage"), (req, res) => {
+  const { partKey } = req.params;
+  if (!PART_KEYS.includes(partKey)) return res.status(400).json({ error: "Invalid part" });
+
+  const styles = readStyles();
+  const idx = styles.findIndex((s) => s.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: "Style not found" });
+
+  const component = styles[idx].parts[partKey].components.find((c) => c.type === "Fabric" && !c.custom);
+  if (!component) return res.status(404).json({ error: "Fabric row not found" });
+
+  if (req.file) {
+    deleteUploadedFile(component.fabricImagePath);
+    component.fabricImagePath = `/uploads/${req.file.filename}`;
+  } else if (req.body.removeFabricImage === "true") {
+    deleteUploadedFile(component.fabricImagePath);
+    component.fabricImagePath = null;
+  }
+
+  styles[idx].updatedAt = new Date().toISOString();
+  writeStyles(styles);
+  res.json({ ok: true, fabricImagePath: component.fabricImagePath });
 });
 
 function parseParts(raw) {

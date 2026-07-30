@@ -149,6 +149,10 @@ function renderParts(s) {
               <td>${escapeAttr(row.billNo || "-")}</td>
               <td>${row.type === "Process" ? row.billedQty || 0 : "-"}</td>
               <td>${row.received ? "Yes" : "-"}</td>
+              <td>${row.type === "Fabric" ? escapeAttr(row.fabricNo || "-") : "-"}</td>
+              <td>${row.type === "Fabric" ? row.fabricUsed || 0 : "-"}</td>
+              <td>${row.type === "Fabric" ? row.fabricRemaining || 0 : "-"}</td>
+              <td>${row.type === "Fabric" && row.fabricImagePath ? `<img src="${escapeAttr(row.fabricImagePath)}" style="width:32px; height:32px; object-fit:cover; border-radius:4px;" />` : "-"}</td>
             </tr>
           `
         )
@@ -160,7 +164,7 @@ function renderParts(s) {
             <table class="comp-table">
               <thead>
                 <tr>
-                  <th>Type</th><th>Description</th><th>UOM</th><th>Rate</th><th>Consumption</th><th>Vendor</th><th>Bill No.</th><th>Actual Billed Qty</th><th>Received</th>
+                  <th>Type</th><th>Description</th><th>UOM</th><th>Rate</th><th>Consumption</th><th>Vendor</th><th>Bill No.</th><th>Actual Billed Qty</th><th>Received</th><th>Fabric No.</th><th>Fabric Used</th><th>Remaining Fabric</th><th>Image</th>
                 </tr>
               </thead>
               <tbody>${rows}</tbody>
