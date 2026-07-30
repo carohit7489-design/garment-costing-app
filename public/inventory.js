@@ -1,4 +1,6 @@
 let currentStyle = null;
+let allStyles = [];
+let selectedStyleId = null;
 
 const el = (id) => document.getElementById(id);
 
@@ -15,27 +17,47 @@ function escapeAttr(s) {
 
 async function loadStyleList(selectId) {
   const res = await fetch("/api/styles");
-  const styles = await res.json();
+  allStyles = await res.json();
+  selectedStyleId = selectId;
+  renderStyleList();
+}
+
+function renderStyleList() {
   const list = el("styleList");
   list.innerHTML = "";
-  if (styles.length === 0) {
+
+  if (allStyles.length === 0) {
     list.innerHTML = '<li class="empty-state" style="cursor:default;">No styles yet.</li>';
     return;
   }
-  styles
-    .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
-    .forEach((s) => {
-      const li = document.createElement("li");
-      li.className = s.id === selectId ? "active" : "";
-      li.innerHTML = `
-        <div class="sname">${escapeAttr(s.styleNo)} - ${escapeAttr(s.styleName)}</div>
-        <div class="smeta">${escapeAttr(s.buyer || "-")} · ${s.totalPcs} pcs ordered</div>
-        <div class="smeta" style="color:var(--navy); font-weight:bold;">Balance in store: ${s.inventoryBalance}</div>
-      `;
-      li.addEventListener("click", () => openStyle(s.id));
-      list.appendChild(li);
-    });
+
+  const search = el("styleSearch").value.trim().toLowerCase();
+  let styles = allStyles.slice().sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+  if (search) {
+    styles = styles.filter((s) =>
+      [s.styleNo, s.styleName, s.buyer].some((v) => String(v || "").toLowerCase().includes(search))
+    );
+  }
+
+  if (styles.length === 0) {
+    list.innerHTML = '<li class="empty-state" style="cursor:default;">No styles match.</li>';
+    return;
+  }
+
+  styles.forEach((s) => {
+    const li = document.createElement("li");
+    li.className = s.id === selectedStyleId ? "active" : "";
+    li.innerHTML = `
+      <div class="sname">${escapeAttr(s.styleNo)} - ${escapeAttr(s.styleName)}</div>
+      <div class="smeta">${escapeAttr(s.buyer || "-")} · ${s.totalPcs} pcs ordered</div>
+      <div class="smeta" style="color:var(--navy); font-weight:bold;">Balance in store: ${s.inventoryBalance}</div>
+    `;
+    li.addEventListener("click", () => openStyle(s.id));
+    list.appendChild(li);
+  });
 }
+
+el("styleSearch").addEventListener("input", renderStyleList);
 
 async function openStyle(id) {
   const res = await fetch(`/api/styles/${id}`);
