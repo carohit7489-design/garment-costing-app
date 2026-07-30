@@ -1,7 +1,4 @@
-const CATEGORY_LABELS = { A: "Category A", B: "Category B" };
-
 let currentStyle = null;
-let producedCombos = []; // [{color, category, balance}] - only combos production has actually logged
 
 const el = (id) => document.getElementById(id);
 
@@ -50,81 +47,32 @@ async function openStyle(id) {
   el("detailContent").style.display = "block";
   el("formTitle").textContent = `${s.styleNo} - ${s.styleName}`;
 
-  // Only combinations production actually logged (produced > 0) - selling
-  // a color/category that was never produced is exactly the bug this fixes.
-  producedCombos = s.inventory.byColorCategory.filter((r) => r.produced > 0);
-
   el("saleQty").value = "";
   el("saleDate").value = new Date().toISOString().slice(0, 10);
   el("saleBuyer").value = "";
   el("saleReference").value = "";
 
-  renderSaleForm();
+  renderSaleForm(s.inventory);
   renderInventory(s.inventory);
   renderSalesHistory(s.sales || []);
   loadStyleList(id);
 }
 
-function renderSaleForm() {
-  if (producedCombos.length === 0) {
+function renderSaleForm(inv) {
+  if (inv.produced <= 0) {
     el("saleForm").style.display = "none";
     el("saleFormEmptyState").style.display = "block";
     return;
   }
   el("saleForm").style.display = "block";
   el("saleFormEmptyState").style.display = "none";
-
-  const colors = Array.from(new Set(producedCombos.map((r) => r.color)));
-  el("saleColor").innerHTML = colors.map((c) => `<option value="${escapeAttr(c)}">${escapeAttr(c || "-")}</option>`).join("");
-  populateSaleCategories();
+  el("saleAvailableHint").textContent = `(Available: ${inv.balance})`;
 }
-
-function populateSaleCategories() {
-  const color = el("saleColor").value;
-  const categoriesForColor = producedCombos.filter((r) => r.color === color);
-  el("saleCategory").innerHTML = categoriesForColor
-    .map((r) => `<option value="${escapeAttr(r.category)}">${escapeAttr(CATEGORY_LABELS[r.category] || r.category)}</option>`)
-    .join("");
-  updateAvailableHint();
-}
-
-function updateAvailableHint() {
-  const color = el("saleColor").value;
-  const category = el("saleCategory").value;
-  const combo = producedCombos.find((r) => r.color === color && r.category === category);
-  el("saleAvailableHint").textContent = combo ? `(Available: ${combo.balance})` : "";
-}
-
-el("saleColor").addEventListener("change", populateSaleCategories);
-el("saleCategory").addEventListener("change", updateAvailableHint);
 
 function renderInventory(inv) {
   el("sumProduced").textContent = inv.produced.toLocaleString();
   el("sumSold").textContent = inv.sold.toLocaleString();
   el("sumBalance").textContent = inv.balance.toLocaleString();
-
-  if (inv.byColorCategory.length === 0) {
-    el("inventoryTable").style.display = "none";
-    el("inventoryEmptyState").style.display = "block";
-    return;
-  }
-  el("inventoryTable").style.display = "";
-  el("inventoryEmptyState").style.display = "none";
-
-  el("inventoryBody").innerHTML = inv.byColorCategory
-    .map((r) => {
-      const lowColor = r.balance <= 0 ? "var(--red)" : r.balance < r.produced * 0.2 ? "#b8860b" : "#1a7a3c";
-      return `
-        <tr>
-          <td style="text-align:left;">${escapeAttr(r.color || "-")}</td>
-          <td>${escapeAttr(CATEGORY_LABELS[r.category] || r.category)}</td>
-          <td>${r.produced}</td>
-          <td>${r.sold}</td>
-          <td style="font-weight:bold; color:${lowColor};">${r.balance}</td>
-        </tr>
-      `;
-    })
-    .join("");
 }
 
 function renderSalesHistory(sales) {
@@ -139,7 +87,7 @@ function renderSalesHistory(sales) {
     .map(
       (s) => `
         <div class="hist-item">
-          <strong>${escapeAttr(s.date)}</strong> · ${escapeAttr(s.color)} / ${escapeAttr(CATEGORY_LABELS[s.category] || "-")} · Sold ${s.qtySold} pcs
+          <strong>${escapeAttr(s.date)}</strong> · Sold ${s.qtySold} pcs
           ${s.buyer ? ` · ${escapeAttr(s.buyer)}` : ""}${s.reference ? ` · Ref: ${escapeAttr(s.reference)}` : ""}
         </div>
       `
@@ -149,27 +97,19 @@ function renderSalesHistory(sales) {
 
 async function recordSale() {
   if (!currentStyle) return;
-  const color = el("saleColor").value;
-  const category = el("saleCategory").value;
   const qtySold = Number(el("saleQty").value);
-  const combo = producedCombos.find((r) => r.color === color && r.category === category);
-  if (!combo) {
-    toast("No produced color/category to sell against", true);
-    return;
-  }
   if (!qtySold || qtySold <= 0) {
     toast("Enter a valid quantity sold", true);
     return;
   }
 
-  if (qtySold > combo.balance) {
-    const proceed = confirm(`Only ${combo.balance} in stock for ${color || "-"} / ${CATEGORY_LABELS[category] || category}. Record this sale of ${qtySold} anyway?`);
+  const balance = currentStyle.inventory.balance;
+  if (qtySold > balance) {
+    const proceed = confirm(`Only ${balance} in stock. Record this sale of ${qtySold} anyway?`);
     if (!proceed) return;
   }
 
   const payload = {
-    color,
-    category,
     qtySold,
     date: el("saleDate").value,
     buyer: el("saleBuyer").value.trim(),

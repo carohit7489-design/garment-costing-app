@@ -36,39 +36,11 @@
       </div>
 
       <section class="panel" style="margin-top:16px;">
-        <h2>Inventory Balance by Color &amp; Category</h2>
-        <p style="color:var(--muted); font-size:12px; margin-top:0;">Sales are pooled by Category A / Category B (matches the cut-planning ratio on the Production page).</p>
-        <div class="table-scroll">
-          <table class="comp-table" id="inventoryTable">
-            <thead>
-              <tr>
-                <th style="text-align:left;">Color</th>
-                <th>Category</th>
-                <th>Produced</th>
-                <th>Sold</th>
-                <th>Balance</th>
-              </tr>
-            </thead>
-            <tbody id="inventoryBody"></tbody>
-          </table>
-        </div>
-        <div id="inventoryEmptyState" class="empty-state" style="display:none;">No production logged for this style yet.</div>
-      </section>
-
-      <section class="panel" style="margin-top:16px;">
         <h2>Record a Sale</h2>
-        <p style="color:var(--muted); font-size:12px; margin-top:0;">Sales are recorded against a Color + Category (A/B). Only combinations production has actually logged appear here.</p>
+        <p style="color:var(--muted); font-size:12px; margin-top:0;">Stock is maintained style-wise - not split by color or size/category.</p>
 
         <div id="saleForm">
           <div class="form-grid" style="grid-template-columns: repeat(3, 1fr);">
-            <div class="field">
-              <label>Color</label>
-              <select id="saleColor"></select>
-            </div>
-            <div class="field">
-              <label>Category</label>
-              <select id="saleCategory"></select>
-            </div>
             <div class="field">
               <label>Qty Sold <span id="saleAvailableHint" style="color:var(--muted); font-weight:normal;"></span></label>
               <input id="saleQty" type="number" min="1" placeholder="e.g. 20" />

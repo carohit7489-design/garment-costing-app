@@ -381,45 +381,12 @@ function migrateStyle(style) {
   };
 }
 
-// Inventory = produced (from production's actuals) minus sold (from sales),
-// both logged at the Category A/B level, rolled up to color + category.
+// Inventory is maintained style-wise only: produced (from production's
+// actuals, summed regardless of color/category) minus sold (from sales).
 function computeInventory(style) {
-  const key = (color, category) => `${color || ""}|||${category || ""}`;
-  const produced = new Map();
-  const sold = new Map();
-
-  (style.actuals || []).forEach((entry) => {
-    // Older entries were logged per exact size before this was category-based;
-    // derive the category from that size so nothing is lost.
-    const category = entry.category || categoryForSize(entry.size);
-    if (!category) return;
-    const k = key(entry.color, category);
-    produced.set(k, (produced.get(k) || 0) + (Number(entry.actualProducedQty) || 0));
-  });
-  (style.sales || []).forEach((entry) => {
-    // Older sales were logged per exact size before this was category-based;
-    // derive the category from that size so nothing is lost.
-    const category = entry.category || categoryForSize(entry.size);
-    if (!category) return;
-    const k = key(entry.color, category);
-    sold.set(k, (sold.get(k) || 0) + (Number(entry.qtySold) || 0));
-  });
-
-  const keys = new Set([...produced.keys(), ...sold.keys()]);
-  const byColorCategory = Array.from(keys).map((k) => {
-    const [color, category] = k.split("|||");
-    const p = produced.get(k) || 0;
-    const s = sold.get(k) || 0;
-    return { color, category, produced: p, sold: s, balance: p - s };
-  });
-  byColorCategory.sort((a, b) => a.color.localeCompare(b.color) || a.category.localeCompare(b.category));
-
-  const totals = byColorCategory.reduce(
-    (acc, r) => ({ produced: acc.produced + r.produced, sold: acc.sold + r.sold, balance: acc.balance + r.balance }),
-    { produced: 0, sold: 0, balance: 0 }
-  );
-
-  return { byColorCategory, ...totals };
+  const produced = (style.actuals || []).reduce((sum, entry) => sum + (Number(entry.actualProducedQty) || 0), 0);
+  const sold = (style.sales || []).reduce((sum, entry) => sum + (Number(entry.qtySold) || 0), 0);
+  return { produced, sold, balance: produced - sold };
 }
 
 function readStyles() {
@@ -776,14 +743,12 @@ app.post("/api/styles/:id/sales", (req, res) => {
   if (idx === -1) return res.status(404).json({ error: "Style not found" });
 
   const body = req.body;
-  if (body.color === undefined || !["A", "B"].includes(body.category) || !(Number(body.qtySold) > 0)) {
-    return res.status(400).json({ error: "color, category (A or B), and a positive qtySold are required" });
+  if (!(Number(body.qtySold) > 0)) {
+    return res.status(400).json({ error: "a positive qtySold is required" });
   }
 
   const entry = {
     id: crypto.randomUUID(),
-    color: body.color,
-    category: body.category,
     qtySold: Number(body.qtySold),
     date: body.date || new Date().toISOString().slice(0, 10),
     buyer: body.buyer || "",
