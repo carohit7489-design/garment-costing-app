@@ -56,8 +56,10 @@ function defaultFabricRow() {
   return { type: "Fabric", description: "Fabric", uom: "Mtr", rate: 0, consumption: 0 };
 }
 
-function defaultCustomRow() {
-  return { type: "Process", description: "", uom: "Pcs", rate: 0, consumption: 0, vendor: "", billNo: "", received: false, billedQty: 0, custom: true };
+function defaultCustomRow(type) {
+  return type === "Fabric"
+    ? { type: "Fabric", description: "", uom: "Mtr", rate: 0, consumption: 0, custom: true }
+    : { type: "Process", description: "", uom: "Pcs", rate: 0, consumption: 0, vendor: "", billNo: "", received: false, billedQty: 0, custom: true };
 }
 
 function defaultProcessRow(name) {
@@ -187,7 +189,27 @@ function renderParts() {
 }
 
 function renderPartTable(partKey) {
-  const rows = parts[partKey].components.map((row, idx) => renderComponentRow(partKey, row, idx)).join("");
+  const components = parts[partKey].components;
+  const fabricEntries = components.map((row, idx) => ({ row, idx })).filter(({ row }) => row.type === "Fabric");
+  const processEntries = components.map((row, idx) => ({ row, idx })).filter(({ row }) => row.type === "Process");
+
+  return `
+    <h4 style="margin:10px 0 4px;">Fabric</h4>
+    ${renderSegmentTable(partKey, fabricEntries, true)}
+    <button class="btn-small" type="button" data-action="add-line-item" data-part="${partKey}" data-type="Fabric" style="margin-top:6px;">+ Add Line Item</button>
+
+    <h4 style="margin:18px 0 4px;">Process / Job Work</h4>
+    ${renderSegmentTable(partKey, processEntries, false)}
+    <button class="btn-small" type="button" data-action="add-line-item" data-part="${partKey}" data-type="Process" style="margin-top:6px;">+ Add Line Item</button>
+  `;
+}
+
+function renderSegmentTable(partKey, entries, isFabric) {
+  const rows = entries.map(({ row, idx }) => renderComponentRow(partKey, row, idx, isFabric)).join("");
+  const jobWorkHeaders = isFabric
+    ? ""
+    : `<th style="width:120px;">Vendor</th><th style="width:100px;">Bill No.</th><th style="width:100px;">Actual Billed Qty</th><th style="width:70px;">Received</th>`;
+
   return `
     <div class="table-scroll">
       <table class="comp-table">
@@ -197,37 +219,28 @@ function renderPartTable(partKey) {
             <th style="width:70px;">UOM</th>
             <th style="width:80px;">Rate</th>
             <th style="width:110px;">Avg Consumption</th>
-            <th style="width:120px;">Vendor</th>
-            <th style="width:100px;">Bill No.</th>
-            <th style="width:100px;">Actual Billed Qty</th>
-            <th style="width:70px;">Received</th>
+            ${jobWorkHeaders}
             <th style="width:36px;"></th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
       </table>
     </div>
-    <button class="btn-small" type="button" data-action="add-line-item" data-part="${partKey}" style="margin-top:8px;">+ Add Line Item</button>
   `;
 }
 
-function renderComponentRow(partKey, row, idx) {
-  const isFabric = row.type === "Fabric";
-  const isOther = !row.custom && idx === FIXED_PROCESS_NAMES.length + 1; // last fixed row
+function renderComponentRow(partKey, row, idx, isFabric) {
+  const isOther = !row.custom && !isFabric && idx === FIXED_PROCESS_NAMES.length + 1; // last fixed row
   const isCustom = !!row.custom;
 
-  const vendorCell = isFabric
-    ? `<span style="color:var(--muted); font-size:12px;">-</span>`
-    : `<input data-part="${partKey}" data-idx="${idx}" data-field="vendor" value="${escapeAttr(row.vendor)}" placeholder="Vendor" style="max-width:110px;" />`;
-  const billCell = isFabric
-    ? `<span style="color:var(--muted); font-size:12px;">-</span>`
-    : `<input data-part="${partKey}" data-idx="${idx}" data-field="billNo" value="${escapeAttr(row.billNo)}" placeholder="Bill No." style="max-width:100px;" />`;
-  const billedQtyCell = isFabric
-    ? `<span style="color:var(--muted); font-size:12px;">-</span>`
-    : `<input data-part="${partKey}" data-idx="${idx}" data-field="billedQty" type="number" step="0.01" min="0" value="${row.billedQty || 0}" style="max-width:90px;" />`;
-  const receivedCell = isFabric
-    ? `<span style="color:var(--muted); font-size:12px;">-</span>`
-    : `<input data-part="${partKey}" data-idx="${idx}" data-field="received" type="checkbox" ${row.received ? "checked" : ""} />`;
+  const jobWorkCells = isFabric
+    ? ""
+    : `
+      <td><input data-part="${partKey}" data-idx="${idx}" data-field="vendor" value="${escapeAttr(row.vendor)}" placeholder="Vendor" style="max-width:110px;" /></td>
+      <td><input data-part="${partKey}" data-idx="${idx}" data-field="billNo" value="${escapeAttr(row.billNo)}" placeholder="Bill No." style="max-width:100px;" /></td>
+      <td><input data-part="${partKey}" data-idx="${idx}" data-field="billedQty" type="number" step="0.01" min="0" value="${row.billedQty || 0}" style="max-width:90px;" /></td>
+      <td style="text-align:center;"><input data-part="${partKey}" data-idx="${idx}" data-field="received" type="checkbox" ${row.received ? "checked" : ""} /></td>
+    `;
 
   // Fabric, "Other", and custom-added rows are free-text names; the fixed
   // process rows in between are plain labels - nothing to choose or type.
@@ -246,10 +259,7 @@ function renderComponentRow(partKey, row, idx) {
       <td><input data-part="${partKey}" data-idx="${idx}" data-field="uom" value="${escapeAttr(row.uom)}" placeholder="Mtr/Pcs" /></td>
       <td><input data-part="${partKey}" data-idx="${idx}" data-field="rate" type="number" step="0.01" min="0" value="${row.rate}" /></td>
       <td><input data-part="${partKey}" data-idx="${idx}" data-field="consumption" type="number" step="0.01" min="0" value="${row.consumption}" style="max-width:90px;" /></td>
-      <td>${vendorCell}</td>
-      <td>${billCell}</td>
-      <td>${billedQtyCell}</td>
-      <td style="text-align:center;">${receivedCell}</td>
+      ${jobWorkCells}
       <td>${removeCell}</td>
     </tr>
   `;
@@ -406,7 +416,7 @@ el("partsContainer").addEventListener("change", (e) => {
 el("partsContainer").addEventListener("click", (e) => {
   const addBtn = e.target.closest('button[data-action="add-line-item"]');
   if (addBtn) {
-    parts[addBtn.dataset.part].components.push(defaultCustomRow());
+    parts[addBtn.dataset.part].components.push(defaultCustomRow(addBtn.dataset.type));
     renderParts();
     return;
   }
@@ -461,8 +471,6 @@ async function openStyle(id) {
   el("season").value = s.season;
   el("currency").value = s.currency;
   el("orderType").value = s.orderType || "Bulk";
-  el("pocket").value = s.pocket || "";
-  el("patti").value = s.patti || "";
   colors = s.colors && s.colors.length ? s.colors : [];
   parts = s.parts;
   styleActuals = s.actuals || [];
@@ -493,8 +501,6 @@ function resetForm() {
   el("season").value = "";
   el("currency").value = "INR";
   el("orderType").value = "Bulk";
-  el("pocket").value = "";
-  el("patti").value = "";
   // New styles default to a quantity of 1, since the real order total now
   // comes from what production enters - this just keeps costing/margin
   // figures meaningful (per-piece) before an actual order qty is known.
@@ -569,8 +575,6 @@ async function saveStyle() {
   formData.append("season", el("season").value.trim());
   formData.append("currency", el("currency").value.trim() || "INR");
   formData.append("orderType", el("orderType").value);
-  formData.append("pocket", el("pocket").value.trim());
-  formData.append("patti", el("patti").value.trim());
   formData.append("colors", JSON.stringify(colorsToSave));
   formData.append("parts", JSON.stringify(partsToSave));
   // designApproval is intentionally not sent here - it only changes via

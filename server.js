@@ -277,7 +277,10 @@ function reconcileFixedComponents(existing) {
   const otherRow = otherSource
     ? { ...defaultProcessRow(otherSource.description || "Other"), ...otherSource }
     : defaultProcessRow("Other");
-  const customRowsOut = customRows.map((c) => ({ ...defaultProcessRow(c.description || ""), ...c, custom: true }));
+  const customRowsOut = customRows.map((c) => {
+    const base = c.type === "Fabric" ? defaultFabricRow() : defaultProcessRow(c.description || "");
+    return { ...base, ...c, custom: true };
+  });
 
   return [fabric, ...processRows, otherRow, ...customRowsOut];
 }
@@ -391,8 +394,6 @@ function migrateStyle(style) {
   return {
     ...rest,
     orderType: style.orderType || "Bulk",
-    pocket: style.pocket || "",
-    patti: style.patti || "",
     colors,
     parts,
     actuals,
@@ -635,8 +636,6 @@ app.post("/api/styles", requireOwnerAuth, upload.single("designImage"), (req, re
     buyer: body.buyer || "",
     season: body.season || "",
     orderType: body.orderType === "Sample" ? "Sample" : "Bulk",
-    pocket: body.pocket || "",
-    patti: body.patti || "",
     currency: body.currency || "INR",
     colors: parseColors(body.colors),
     parts: parseParts(body.parts),
@@ -677,8 +676,6 @@ app.put("/api/styles/:id", requireOwnerAuth, upload.single("designImage"), (req,
     buyer: body.buyer ?? existing.buyer,
     season: body.season ?? existing.season,
     orderType: body.orderType !== undefined ? (body.orderType === "Sample" ? "Sample" : "Bulk") : existing.orderType,
-    pocket: body.pocket ?? existing.pocket,
-    patti: body.patti ?? existing.patti,
     currency: body.currency ?? existing.currency,
     colors: body.colors !== undefined ? parseColors(body.colors) : existing.colors,
     parts: body.parts !== undefined ? parseParts(body.parts) : existing.parts,

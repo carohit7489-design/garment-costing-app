@@ -87,8 +87,6 @@ async function openStyle(id) {
   el("infoBuyer").textContent = s.buyer || "-";
   el("infoSeason").textContent = s.season || "-";
   el("infoOrderType").textContent = s.orderType || "-";
-  el("infoPocket").textContent = s.pocket || "-";
-  el("infoPatti").textContent = s.patti || "-";
 
   const img = el("designPreview");
   const empty = el("designPreviewEmpty");
