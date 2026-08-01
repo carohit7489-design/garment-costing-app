@@ -261,7 +261,22 @@ function reconcileComponents(existing) {
 }
 
 function defaultPart() {
-  return { enabled: false, sellingRate: 0, components: defaultFixedComponents() };
+  return { enabled: false, sellingRate: 0, components: defaultFixedComponents(), colorFabric: {} };
+}
+
+// colorFabric is keyed by color name: { [colorName]: { fabricNo, fabricUsed, fabricRemaining } }
+function migrateColorFabric(raw) {
+  if (!raw || typeof raw !== "object") return {};
+  const out = {};
+  for (const [color, v] of Object.entries(raw)) {
+    if (!v || typeof v !== "object") continue;
+    out[color] = {
+      fabricNo: v.fabricNo || "",
+      fabricUsed: Number(v.fabricUsed) || 0,
+      fabricRemaining: Number(v.fabricRemaining) || 0,
+    };
+  }
+  return out;
 }
 
 function defaultParts() {
@@ -351,6 +366,7 @@ function migrateStyle(style) {
         enabled: !!part.enabled,
         sellingRate: Number(part.sellingRate) || 0,
         components: reconcileComponents((part.components || []).map(migrateComponent)),
+        colorFabric: migrateColorFabric(part.colorFabric),
       };
     }
   } else {
@@ -588,6 +604,7 @@ function parseParts(raw) {
       enabled: !!part.enabled,
       sellingRate: Number(part.sellingRate) || 0,
       components: reconcileComponents(components.map(migrateComponent)),
+      colorFabric: migrateColorFabric(part.colorFabric),
     };
   }
   return parts;

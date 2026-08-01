@@ -89,7 +89,7 @@ function defaultFixedComponents() {
 }
 
 function defaultPart() {
-  return { enabled: false, sellingRate: 0, components: defaultFixedComponents() };
+  return { enabled: false, sellingRate: 0, components: defaultFixedComponents(), colorFabric: {} };
 }
 
 function defaultParts() {
@@ -237,9 +237,51 @@ function renderPartTable(partKey) {
     ${renderSegmentTable(partKey, fabricEntries, true)}
     <button class="btn-small" type="button" data-action="add-line-item" data-part="${partKey}" data-type="Fabric" style="margin-top:6px;">+ Add Line Item</button>
 
+    <h4 style="margin:14px 0 4px;">Color-wise Fabric - ${PART_LABELS[partKey]}</h4>
+    ${renderColorFabricSection(partKey)}
+
     <h4 style="margin:18px 0 4px;">Process / Job Work</h4>
     ${renderSegmentTable(partKey, processEntries, false)}
     <button class="btn-small" type="button" data-action="add-line-item" data-part="${partKey}" data-type="Process" style="margin-top:6px;">+ Add Line Item</button>
+  `;
+}
+
+// Fabric tracking per color, below each part's Fabric section - each color
+// (from the Order Quantity grid) can have its own Fabric No./Used/Remaining,
+// since different colorways often come from different fabric lots.
+function renderColorFabricSection(partKey) {
+  if (colors.length === 0) {
+    return `<div class="empty-state" style="padding:8px; font-size:12px;">Add colors in the Order Quantity grid to break down fabric by color.</div>`;
+  }
+  const colorFabric = parts[partKey].colorFabric || {};
+  const rows = colors
+    .map((c) => {
+      const entry = colorFabric[c.name] || { fabricNo: "", fabricUsed: 0, fabricRemaining: 0 };
+      return `
+        <tr>
+          <td style="text-align:left;">${escapeAttr(c.name || "-")}</td>
+          <td><input data-part="${partKey}" data-color="${escapeAttr(c.name)}" data-field="fabricNo" value="${escapeAttr(entry.fabricNo)}" placeholder="e.g. F-101" style="max-width:100px;" /></td>
+          <td><input data-part="${partKey}" data-color="${escapeAttr(c.name)}" data-field="fabricUsed" type="number" step="0.01" min="0" value="${entry.fabricUsed}" style="max-width:90px;" /></td>
+          <td><input data-part="${partKey}" data-color="${escapeAttr(c.name)}" data-field="fabricRemaining" type="number" step="0.01" min="0" value="${entry.fabricRemaining}" style="max-width:90px;" /></td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  return `
+    <div class="table-scroll">
+      <table class="comp-table">
+        <thead>
+          <tr>
+            <th style="text-align:left;">Color</th>
+            <th style="width:110px;">Fabric No.</th>
+            <th style="width:100px;">Fabric Used</th>
+            <th style="width:110px;">Remaining Fabric</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
   `;
 }
 
@@ -506,6 +548,13 @@ el("partsContainer").addEventListener("input", (e) => {
   }
   const field = t.dataset.field;
   if (!field) return;
+  if (t.dataset.color !== undefined) {
+    const part = parts[t.dataset.part];
+    if (!part.colorFabric) part.colorFabric = {};
+    if (!part.colorFabric[t.dataset.color]) part.colorFabric[t.dataset.color] = { fabricNo: "", fabricUsed: 0, fabricRemaining: 0 };
+    part.colorFabric[t.dataset.color][field] = field === "fabricNo" ? t.value : Number(t.value) || 0;
+    return;
+  }
   const partKey = t.dataset.part;
   const idx = Number(t.dataset.idx);
   const row = parts[partKey].components[idx];
@@ -717,6 +766,7 @@ async function saveStyle() {
       enabled: parts[key].enabled,
       sellingRate: parts[key].sellingRate,
       components: parts[key].components,
+      colorFabric: parts[key].colorFabric || {},
     };
   }
   const colorsToSave = colors.filter((c) => c.name.trim() !== "");

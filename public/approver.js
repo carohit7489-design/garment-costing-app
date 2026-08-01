@@ -158,6 +158,14 @@ function renderParts(s) {
           `
         )
         .join("");
+      const colorFabric = part.colorFabric || {};
+      const colorRows = (s.colors || [])
+        .map((c) => {
+          const entry = colorFabric[c.name] || { fabricNo: "-", fabricUsed: 0, fabricRemaining: 0 };
+          return `<tr><td style="text-align:left;">${escapeAttr(c.name || "-")}</td><td>${escapeAttr(entry.fabricNo || "-")}</td><td>${entry.fabricUsed || 0}</td><td>${entry.fabricRemaining || 0}</td></tr>`;
+        })
+        .join("");
+
       return `
         <div class="part-block">
           <div class="part-header"><label>${PART_LABELS[key]} - Selling Rate/Garment: ${s.currency} ${Number(part.sellingRate || 0).toFixed(2)}</label></div>
@@ -171,6 +179,15 @@ function renderParts(s) {
               <tbody>${rows}</tbody>
             </table>
           </div>
+          ${colorRows ? `
+          <div style="margin-top:8px; font-size:12px; color:var(--muted); font-weight:bold;">Color-wise Fabric</div>
+          <div class="table-scroll">
+            <table class="comp-table">
+              <thead><tr><th style="text-align:left;">Color</th><th>Fabric No.</th><th>Fabric Used</th><th>Remaining Fabric</th></tr></thead>
+              <tbody>${colorRows}</tbody>
+            </table>
+          </div>
+          ` : ""}
         </div>
       `;
     })
