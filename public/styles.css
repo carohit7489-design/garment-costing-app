@@ -72,6 +72,11 @@ main {
   main { grid-template-columns: 1fr; }
 }
 
+/* Used when a page is loaded inside workspace.html's tab iframes, via
+   ?embed=1 - hides the page's own header so it isn't shown twice. */
+html.embedded header.top { display: none; }
+html.embedded main { margin-top: 10px; }
+
 /* Grid items default to min-width:auto, which sizes them to fit their
    widest descendant (like a wide table) even through overflow-x:auto -
    this lets them actually shrink, so .table-scroll wrappers can do their job. */
