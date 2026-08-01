@@ -64,7 +64,8 @@ function defaultFabricRow() {
     type: "Fabric",
     description: "Fabric",
     uom: "Mtr",
-    rate: 0,
+    estimatedRate: 0,
+    actualRate: 0,
     consumption: 0,
     fabricNo: "",
     fabricUsed: 0,
@@ -75,12 +76,12 @@ function defaultFabricRow() {
 
 function defaultCustomRow(type) {
   return type === "Fabric"
-    ? { type: "Fabric", description: "", uom: "Mtr", rate: 0, consumption: 0, fabricNo: "", fabricUsed: 0, fabricRemaining: 0, custom: true }
-    : { type: "Process", description: "", uom: "Pcs", rate: 0, consumption: 0, vendor: "", billNo: "", received: false, billedQty: 0, custom: true };
+    ? { type: "Fabric", description: "", uom: "Mtr", estimatedRate: 0, actualRate: 0, consumption: 0, fabricNo: "", fabricUsed: 0, fabricRemaining: 0, custom: true }
+    : { type: "Process", description: "", uom: "Pcs", estimatedRate: 0, actualRate: 0, consumption: 0, vendor: "", billNo: "", received: false, billedQty: 0, custom: true };
 }
 
 function defaultProcessRow(name) {
-  return { type: "Process", description: name, uom: "Pcs", rate: 0, consumption: 1, vendor: "", billNo: "", received: false, billedQty: 0 };
+  return { type: "Process", description: name, uom: "Pcs", estimatedRate: 0, actualRate: 0, consumption: 1, vendor: "", billNo: "", received: false, billedQty: 0 };
 }
 
 function defaultFixedComponents() {
@@ -95,18 +96,18 @@ function defaultParts() {
   return Object.fromEntries(PART_KEYS.map((k) => [k, defaultPart()]));
 }
 
-function costOfRow(row) {
-  return (Number(row.consumption) || 0) * (Number(row.rate) || 0);
+function costOfRow(row, rateField) {
+  return (Number(row.consumption) || 0) * (Number(row[rateField]) || 0);
 }
 
-function partCost(partKey) {
+function partCost(partKey, rateField) {
   const part = parts[partKey];
   if (!part.enabled) return 0;
-  return part.components.reduce((sum, r) => sum + costOfRow(r), 0);
+  return part.components.reduce((sum, r) => sum + costOfRow(r, rateField), 0);
 }
 
-function grandCost() {
-  return PART_KEYS.reduce((sum, k) => sum + partCost(k), 0);
+function grandCost(rateField) {
+  return PART_KEYS.reduce((sum, k) => sum + partCost(k, rateField), 0);
 }
 
 function totalSellingRate() {
@@ -258,7 +259,8 @@ function renderSegmentTable(partKey, entries, isFabric) {
           <tr>
             <th style="min-width:180px;">Line Item</th>
             <th style="width:70px;">UOM</th>
-            <th style="width:80px;">Rate</th>
+            <th style="width:90px;">Est. Rate</th>
+            <th style="width:90px;">Actual Rate</th>
             <th style="width:110px;">Avg Consumption</th>
             ${extraHeaders}
             ${reorderHeader}
@@ -334,7 +336,8 @@ function renderComponentRow(partKey, row, idx, isFabric, isFirstProcess, isLastP
     <tr>
       <td>${descriptionCell}</td>
       <td><input data-part="${partKey}" data-idx="${idx}" data-field="uom" value="${escapeAttr(row.uom)}" placeholder="Mtr/Pcs" /></td>
-      <td><input data-part="${partKey}" data-idx="${idx}" data-field="rate" type="number" step="0.01" min="0" value="${row.rate}" /></td>
+      <td><input data-part="${partKey}" data-idx="${idx}" data-field="estimatedRate" type="number" step="0.01" min="0" value="${row.estimatedRate}" /></td>
+      <td><input data-part="${partKey}" data-idx="${idx}" data-field="actualRate" type="number" step="0.01" min="0" value="${row.actualRate}" /></td>
       <td>${consumptionCell}</td>
       ${fabricCells}
       ${jobWorkCells}
@@ -376,29 +379,33 @@ async function removeFabricImage(partKey) {
 
 function renderCostSummary() {
   const head = el("costSummaryHead");
-  head.innerHTML = `<th style="text-align:left;">Part</th><th>Cost / Garment</th>`;
+  head.innerHTML = `<th style="text-align:left;">Part</th><th>Est. Cost / Garment</th><th>Actual Cost / Garment</th>`;
 
   const currency = currentCurrency || "";
   let rows = "";
   PART_KEYS.forEach((key) => {
     if (!parts[key].enabled) return;
-    rows += `<tr><td style="text-align:left;">${PART_LABELS[key]}</td><td class="cost-cell">${partCost(key).toFixed(2)}</td></tr>`;
+    rows += `<tr><td style="text-align:left;">${PART_LABELS[key]}</td><td class="cost-cell">${partCost(key, "estimatedRate").toFixed(2)}</td><td class="cost-cell">${partCost(key, "actualRate").toFixed(2)}</td></tr>`;
   });
-  const cost = grandCost();
+  const estCost = grandCost("estimatedRate");
+  const actualCost = grandCost("actualRate");
   const selling = totalSellingRate();
-  rows += `<tr style="font-weight:bold; border-top:2px solid var(--navy);"><td style="text-align:left;">Total Cost / Garment</td><td class="cost-cell">${currency} ${cost.toFixed(2)}</td></tr>`;
-  rows += `<tr><td style="text-align:left;">Selling Rate / Garment</td><td class="cost-cell">${currency} ${selling.toFixed(2)}</td></tr>`;
-  rows += `<tr><td style="text-align:left;">Margin / Garment</td><td class="cost-cell">${currency} ${(selling - cost).toFixed(2)}</td></tr>`;
+  rows += `<tr style="font-weight:bold; border-top:2px solid var(--navy);"><td style="text-align:left;">Total Cost / Garment</td><td class="cost-cell">${currency} ${estCost.toFixed(2)}</td><td class="cost-cell">${currency} ${actualCost.toFixed(2)}</td></tr>`;
+  rows += `<tr><td style="text-align:left;">Selling Rate / Garment</td><td class="cost-cell">${currency} ${selling.toFixed(2)}</td><td class="cost-cell">${currency} ${selling.toFixed(2)}</td></tr>`;
+  rows += `<tr><td style="text-align:left;">Margin / Garment</td><td class="cost-cell">${currency} ${(selling - estCost).toFixed(2)}</td><td class="cost-cell">${currency} ${(selling - actualCost).toFixed(2)}</td></tr>`;
   el("costSummaryBody").innerHTML = rows;
 
   const qty = totalPcs();
   el("sumOrderQty").textContent = qty ? qty.toLocaleString() : "-";
 
-  const totalCostValue = cost * qty;
+  const totalEstCostValue = estCost * qty;
+  const totalActualCostValue = actualCost * qty;
   const totalSellingValue = selling * qty;
-  el("sumCostValue").textContent = qty ? `${currency} ${totalCostValue.toFixed(2)}` : "-";
+  el("sumCostValue").textContent = qty ? `${currency} ${totalEstCostValue.toFixed(2)}` : "-";
+  el("sumActualCostValue").textContent = qty ? `${currency} ${totalActualCostValue.toFixed(2)}` : "-";
   el("sumSellingValue").textContent = qty ? `${currency} ${totalSellingValue.toFixed(2)}` : "-";
-  el("sumMargin").textContent = qty ? `${currency} ${(totalSellingValue - totalCostValue).toFixed(2)}` : "-";
+  el("sumMargin").textContent = qty ? `${currency} ${(totalSellingValue - totalEstCostValue).toFixed(2)}` : "-";
+  el("sumActualMargin").textContent = qty ? `${currency} ${(totalSellingValue - totalActualCostValue).toFixed(2)}` : "-";
 }
 
 // ---- Variance analysis (aggregated across all production entries) ----
@@ -502,7 +509,7 @@ el("partsContainer").addEventListener("input", (e) => {
   const partKey = t.dataset.part;
   const idx = Number(t.dataset.idx);
   const row = parts[partKey].components[idx];
-  if (field === "consumption" || field === "rate" || field === "billedQty" || field === "fabricUsed" || field === "fabricRemaining") {
+  if (field === "consumption" || field === "estimatedRate" || field === "actualRate" || field === "billedQty" || field === "fabricUsed" || field === "fabricRemaining") {
     row[field] = Number(t.value) || 0;
   } else if (field === "received") {
     row.received = t.checked;

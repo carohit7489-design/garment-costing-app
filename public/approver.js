@@ -18,18 +18,18 @@ function escapeAttr(s) {
   return String(s ?? "").replace(/"/g, "&quot;");
 }
 
-function costOfRow(row) {
-  return (Number(row.consumption) || 0) * (Number(row.rate) || 0);
+function costOfRow(row, rateField) {
+  return (Number(row.consumption) || 0) * (Number(row[rateField]) || 0);
 }
 
-function partCost(style, partKey) {
+function partCost(style, partKey, rateField) {
   const part = style.parts[partKey];
   if (!part.enabled) return 0;
-  return part.components.reduce((sum, r) => sum + costOfRow(r), 0);
+  return part.components.reduce((sum, r) => sum + costOfRow(r, rateField), 0);
 }
 
-function grandCost(style) {
-  return PART_KEYS.reduce((sum, k) => sum + partCost(style, k), 0);
+function grandCost(style, rateField) {
+  return PART_KEYS.reduce((sum, k) => sum + partCost(style, k, rateField), 0);
 }
 
 function totalSellingRate(style) {
@@ -143,7 +143,8 @@ function renderParts(s) {
               <td>${escapeAttr(row.type)}</td>
               <td>${escapeAttr(row.description)}</td>
               <td>${escapeAttr(row.uom)}</td>
-              <td>${row.rate}</td>
+              <td>${row.estimatedRate}</td>
+              <td>${row.actualRate}</td>
               <td>${row.consumption}</td>
               <td>${escapeAttr(row.vendor || "-")}</td>
               <td>${escapeAttr(row.billNo || "-")}</td>
@@ -164,7 +165,7 @@ function renderParts(s) {
             <table class="comp-table">
               <thead>
                 <tr>
-                  <th>Type</th><th>Description</th><th>UOM</th><th>Rate</th><th>Consumption</th><th>Vendor</th><th>Bill No.</th><th>Actual Billed Qty</th><th>Received</th><th>Fabric No.</th><th>Fabric Used</th><th>Remaining Fabric</th><th>Image</th>
+                  <th>Type</th><th>Description</th><th>UOM</th><th>Est. Rate</th><th>Actual Rate</th><th>Consumption</th><th>Vendor</th><th>Bill No.</th><th>Actual Billed Qty</th><th>Received</th><th>Fabric No.</th><th>Fabric Used</th><th>Remaining Fabric</th><th>Image</th>
                 </tr>
               </thead>
               <tbody>${rows}</tbody>
@@ -177,27 +178,31 @@ function renderParts(s) {
 }
 
 function renderCostSummary(s) {
-  el("costSummaryHead").innerHTML = `<th style="text-align:left;">Part</th><th>Cost / Garment</th>`;
+  el("costSummaryHead").innerHTML = `<th style="text-align:left;">Part</th><th>Est. Cost / Garment</th><th>Actual Cost / Garment</th>`;
   const currency = s.currency || "";
   let rows = "";
   PART_KEYS.forEach((key) => {
     if (!s.parts[key].enabled) return;
-    rows += `<tr><td style="text-align:left;">${PART_LABELS[key]}</td><td class="cost-cell">${partCost(s, key).toFixed(2)}</td></tr>`;
+    rows += `<tr><td style="text-align:left;">${PART_LABELS[key]}</td><td class="cost-cell">${partCost(s, key, "estimatedRate").toFixed(2)}</td><td class="cost-cell">${partCost(s, key, "actualRate").toFixed(2)}</td></tr>`;
   });
-  const cost = grandCost(s);
+  const estCost = grandCost(s, "estimatedRate");
+  const actualCost = grandCost(s, "actualRate");
   const selling = totalSellingRate(s);
-  rows += `<tr style="font-weight:bold; border-top:2px solid var(--navy);"><td style="text-align:left;">Total Cost / Garment</td><td class="cost-cell">${currency} ${cost.toFixed(2)}</td></tr>`;
-  rows += `<tr><td style="text-align:left;">Selling Rate / Garment</td><td class="cost-cell">${currency} ${selling.toFixed(2)}</td></tr>`;
-  rows += `<tr><td style="text-align:left;">Margin / Garment</td><td class="cost-cell">${currency} ${(selling - cost).toFixed(2)}</td></tr>`;
+  rows += `<tr style="font-weight:bold; border-top:2px solid var(--navy);"><td style="text-align:left;">Total Cost / Garment</td><td class="cost-cell">${currency} ${estCost.toFixed(2)}</td><td class="cost-cell">${currency} ${actualCost.toFixed(2)}</td></tr>`;
+  rows += `<tr><td style="text-align:left;">Selling Rate / Garment</td><td class="cost-cell">${currency} ${selling.toFixed(2)}</td><td class="cost-cell">${currency} ${selling.toFixed(2)}</td></tr>`;
+  rows += `<tr><td style="text-align:left;">Margin / Garment</td><td class="cost-cell">${currency} ${(selling - estCost).toFixed(2)}</td><td class="cost-cell">${currency} ${(selling - actualCost).toFixed(2)}</td></tr>`;
   el("costSummaryBody").innerHTML = rows;
 
   const qty = totalPcs(s);
   el("sumOrderQty").textContent = qty ? qty.toLocaleString() : "-";
-  const totalCostValue = cost * qty;
+  const totalEstCostValue = estCost * qty;
+  const totalActualCostValue = actualCost * qty;
   const totalSellingValue = selling * qty;
-  el("sumCostValue").textContent = qty ? `${currency} ${totalCostValue.toFixed(2)}` : "-";
+  el("sumCostValue").textContent = qty ? `${currency} ${totalEstCostValue.toFixed(2)}` : "-";
   el("sumSellingValue").textContent = qty ? `${currency} ${totalSellingValue.toFixed(2)}` : "-";
-  el("sumMargin").textContent = qty ? `${currency} ${(totalSellingValue - totalCostValue).toFixed(2)}` : "-";
+  el("sumMargin").textContent = qty ? `${currency} ${(totalSellingValue - totalEstCostValue).toFixed(2)}` : "-";
+  el("sumActualCostValue").textContent = qty ? `${currency} ${totalActualCostValue.toFixed(2)}` : "-";
+  el("sumActualMargin").textContent = qty ? `${currency} ${(totalSellingValue - totalActualCostValue).toFixed(2)}` : "-";
 }
 
 function renderDecision(s) {

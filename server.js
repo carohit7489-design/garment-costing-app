@@ -222,7 +222,8 @@ function defaultFabricRow() {
     type: "Fabric",
     description: "Fabric",
     uom: "Mtr",
-    rate: 0,
+    estimatedRate: 0,
+    actualRate: 0,
     consumption: 0,
     fabricNo: "",
     fabricUsed: 0,
@@ -232,7 +233,7 @@ function defaultFabricRow() {
 }
 
 function defaultProcessRow(name) {
-  return { type: "Process", description: name, uom: "Pcs", rate: 0, consumption: 1, vendor: "", billNo: "", received: false, billedQty: 0 };
+  return { type: "Process", description: name, uom: "Pcs", estimatedRate: 0, actualRate: 0, consumption: 1, vendor: "", billNo: "", received: false, billedQty: 0 };
 }
 
 function defaultFixedComponents() {
@@ -271,6 +272,15 @@ function styleTotalPcs(style) {
   return (style.colors || []).reduce((sum, c) => sum + (Number(c.qty.A) || 0) + (Number(c.qty.B) || 0), 0);
 }
 
+// Older records had one flat "rate"; that's now the Estimated Rate (entered
+// at design time), with Actual Rate as a separate figure filled in later.
+function migrateRates(c) {
+  return {
+    estimatedRate: Number(c.estimatedRate ?? c.rate) || 0,
+    actualRate: Number(c.actualRate) || 0,
+  };
+}
+
 // Upgrades a component to the current Fabric/Process shape without
 // discarding any value already entered.
 function migrateComponent(c) {
@@ -290,7 +300,7 @@ function migrateComponent(c) {
       type: "Fabric",
       description: c.description || "Fabric",
       uom: c.uom || "Mtr",
-      rate: Number(c.rate) || 0,
+      ...migrateRates(c),
       consumption,
       fabricNo: c.fabricNo || "",
       fabricUsed: Number(c.fabricUsed) || 0,
@@ -299,7 +309,10 @@ function migrateComponent(c) {
       ...(c.custom ? { custom: true } : {}),
     };
   }
-  if (c.type === "Process") return c;
+  if (c.type === "Process") {
+    const { rate, ...rest } = c;
+    return { ...rest, ...migrateRates(c) };
+  }
 
   // Pre-parts-rewrite shape used category: "Fabric"/"Trim"/"CM"/"Overhead"/"Other".
   if (c.category === "Fabric") {
@@ -310,13 +323,13 @@ function migrateComponent(c) {
     } else {
       consumption = Number(c.consumption) || 0;
     }
-    return { type: "Fabric", description: c.description || "", uom: c.uom || "Mtr", rate: Number(c.rate) || 0, consumption };
+    return { type: "Fabric", description: c.description || "", uom: c.uom || "Mtr", ...migrateRates(c), consumption };
   }
   return {
     type: "Process",
     description: c.description || "",
     uom: c.uom || "Pcs",
-    rate: Number(c.rate) || 0,
+    ...migrateRates(c),
     consumption: Number(c.consumption) || 1,
     vendor: c.vendor || "",
     billNo: c.billNo || "",
@@ -468,7 +481,7 @@ app.get("/api/styles/:id/production-view", (req, res) => {
     // have to fill in "Adda Work" for a style that never used it.
     const components = [];
     part.components.forEach((c, index) => {
-      const isActive = Number(c.rate) > 0 || Number(c.consumption) > 0;
+      const isActive = Number(c.estimatedRate) > 0 || Number(c.actualRate) > 0 || Number(c.consumption) > 0;
       if (!isActive) return;
       components.push({
         index,
