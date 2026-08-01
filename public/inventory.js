@@ -20,6 +20,50 @@ async function loadStyleList(selectId) {
   allStyles = await res.json();
   selectedStyleId = selectId;
   renderStyleList();
+  renderSummaryDashboard();
+}
+
+function renderSummaryDashboard() {
+  if (allStyles.length === 0) {
+    el("summaryTable").style.display = "none";
+    el("summaryEmptyState").style.display = "block";
+    el("dashTotalStyles").textContent = "0";
+    el("dashTotalProduced").textContent = "-";
+    el("dashTotalSold").textContent = "-";
+    el("dashTotalBalance").textContent = "-";
+    return;
+  }
+  el("summaryTable").style.display = "";
+  el("summaryEmptyState").style.display = "none";
+
+  const styles = allStyles.slice().sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+  el("summaryBody").innerHTML = styles
+    .map((s) => {
+      const lowColor = s.inventoryBalance <= 0 ? "var(--red)" : "#1a7a3c";
+      return `
+        <tr data-style-id="${s.id}" style="cursor:pointer;">
+          <td style="text-align:left;">${escapeAttr(s.styleNo)} - ${escapeAttr(s.styleName)}</td>
+          <td style="text-align:left;">${escapeAttr(s.buyer || "-")}</td>
+          <td>${s.inventoryProduced.toLocaleString()}</td>
+          <td>${s.inventorySold.toLocaleString()}</td>
+          <td style="font-weight:bold; color:${lowColor};">${s.inventoryBalance.toLocaleString()}</td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  const totals = styles.reduce(
+    (acc, s) => ({
+      produced: acc.produced + s.inventoryProduced,
+      sold: acc.sold + s.inventorySold,
+      balance: acc.balance + s.inventoryBalance,
+    }),
+    { produced: 0, sold: 0, balance: 0 }
+  );
+  el("dashTotalStyles").textContent = styles.length.toLocaleString();
+  el("dashTotalProduced").textContent = totals.produced.toLocaleString();
+  el("dashTotalSold").textContent = totals.sold.toLocaleString();
+  el("dashTotalBalance").textContent = totals.balance.toLocaleString();
 }
 
 function renderStyleList() {
@@ -259,5 +303,10 @@ async function recordSale() {
 el("recordTransferBtn").addEventListener("click", recordTransfer);
 el("recordRejectBtn").addEventListener("click", recordReject);
 el("recordSaleBtn").addEventListener("click", recordSale);
+
+el("summaryBody").addEventListener("click", (e) => {
+  const row = e.target.closest("tr[data-style-id]");
+  if (row) openStyle(row.dataset.styleId);
+});
 
 loadStyleList(null);

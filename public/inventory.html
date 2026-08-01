@@ -18,6 +18,31 @@
 </header>
 
 <main id="appMain">
+  <section class="panel" style="grid-column: 1 / -1;">
+    <h2>All Styles Summary</h2>
+    <div class="summary-bar" style="margin-bottom:12px;">
+      <div>Total Styles<strong id="dashTotalStyles">-</strong></div>
+      <div>Total Produced<strong id="dashTotalProduced">-</strong></div>
+      <div>Total Sold<strong id="dashTotalSold">-</strong></div>
+      <div>Total Balance in Hand<strong id="dashTotalBalance">-</strong></div>
+    </div>
+    <div class="table-scroll">
+      <table class="comp-table" id="summaryTable">
+        <thead>
+          <tr>
+            <th style="text-align:left;">Style</th>
+            <th style="text-align:left;">Buyer</th>
+            <th>Produced</th>
+            <th>Sold</th>
+            <th>Balance in Hand</th>
+          </tr>
+        </thead>
+        <tbody id="summaryBody"></tbody>
+      </table>
+    </div>
+    <div id="summaryEmptyState" class="empty-state" style="display:none;">No styles yet.</div>
+  </section>
+
   <section class="panel">
     <h2>Styles</h2>
     <input id="styleSearch" type="search" placeholder="Search style no, name, buyer..." style="width:100%; margin-bottom:8px; box-sizing:border-box;" />

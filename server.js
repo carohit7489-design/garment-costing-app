@@ -419,22 +419,27 @@ function partComponentCount(style) {
 
 app.get("/api/styles", (req, res) => {
   const styles = readStyles();
-  const summary = styles.map((s) => ({
-    id: s.id,
-    styleNo: s.styleNo,
-    styleName: s.styleName,
-    buyer: s.buyer,
-    season: s.season,
-    orderType: s.orderType,
-    totalPcs: styleTotalPcs(s),
-    currency: s.currency,
-    createdAt: s.createdAt,
-    updatedAt: s.updatedAt,
-    componentCount: partComponentCount(s),
-    actualsCount: (s.actuals || []).length,
-    designApprovalStatus: s.designApproval.status,
-    inventoryBalance: computeInventory(s).balance,
-  }));
+  const summary = styles.map((s) => {
+    const inventory = computeInventory(s);
+    return {
+      id: s.id,
+      styleNo: s.styleNo,
+      styleName: s.styleName,
+      buyer: s.buyer,
+      season: s.season,
+      orderType: s.orderType,
+      totalPcs: styleTotalPcs(s),
+      currency: s.currency,
+      createdAt: s.createdAt,
+      updatedAt: s.updatedAt,
+      componentCount: partComponentCount(s),
+      actualsCount: (s.actuals || []).length,
+      designApprovalStatus: s.designApproval.status,
+      inventoryProduced: inventory.produced,
+      inventorySold: inventory.sold,
+      inventoryBalance: inventory.balance,
+    };
+  });
   res.json(summary);
 });
 
