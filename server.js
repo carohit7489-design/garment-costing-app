@@ -12,10 +12,7 @@ const PORT = process.env.PORT || 4100;
 // defaults to a local folder for development.
 const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(__dirname, "data");
 const DATA_FILE = path.join(DATA_DIR, "styles.json");
-const CONFIG_FILE = path.join(DATA_DIR, "config.json");
 const UPLOADS_DIR = path.join(DATA_DIR, "uploads");
-const APPROVER_SESSION_COOKIE = "approver_session";
-const SESSION_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours
 
 const CATEGORIES = ["A", "B"];
 // Legacy size sets, kept only to migrate old per-size records (order qty,
@@ -59,95 +56,6 @@ const upload = multer({
 });
 
 app.use(express.json());
-
-// ---- Config (approver password) ----
-// APPROVER_PASSWORD env var takes priority (set this in production);
-// config.json is a convenience fallback for local development only.
-
-function readConfig() {
-  const fileConfig = fs.existsSync(CONFIG_FILE) ? JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8").trim() || "{}") : {};
-  return {
-    approverPassword: process.env.APPROVER_PASSWORD || fileConfig.approverPassword,
-  };
-}
-
-// ---- Sessions (in-memory) - owner and approver are separate roles/logins ----
-
-function parseCookies(req) {
-  const header = req.headers.cookie;
-  const cookies = {};
-  if (!header) return cookies;
-  header.split(";").forEach((pair) => {
-    const idx = pair.indexOf("=");
-    if (idx === -1) return;
-    cookies[pair.slice(0, idx).trim()] = decodeURIComponent(pair.slice(idx + 1).trim());
-  });
-  return cookies;
-}
-
-// Sets up login/logout/session routes plus an auth-requiring middleware for
-// one role. Only Approver is gated this way now - Design & Costing and
-// Inventory are intentionally open, no login.
-function setupAuthRole({ roleName, cookieName, routePrefix, passwordField }) {
-  const sessions = new Map(); // token -> expiry timestamp
-
-  function isAuthenticated(req) {
-    const token = parseCookies(req)[cookieName];
-    if (!token) return false;
-    const expiry = sessions.get(token);
-    if (!expiry || expiry < Date.now()) {
-      sessions.delete(token);
-      return false;
-    }
-    return true;
-  }
-
-  function requireAuth(req, res, next) {
-    if (!isAuthenticated(req)) {
-      return res.status(401).json({ error: `${roleName} login required` });
-    }
-    next();
-  }
-
-  app.post(`/api/${routePrefix}/login`, (req, res) => {
-    const { password } = req.body || {};
-    const config = readConfig();
-    if (!password || password !== config[passwordField]) {
-      return res.status(401).json({ error: "Incorrect password" });
-    }
-    const token = crypto.randomUUID();
-    sessions.set(token, Date.now() + SESSION_TTL_MS);
-    const secure = req.secure ? " Secure;" : "";
-    res.setHeader(
-      "Set-Cookie",
-      `${cookieName}=${token}; HttpOnly;${secure} Path=/; Max-Age=${SESSION_TTL_MS / 1000}; SameSite=Strict`
-    );
-    res.json({ ok: true });
-  });
-
-  app.post(`/api/${routePrefix}/logout`, (req, res) => {
-    const token = parseCookies(req)[cookieName];
-    if (token) sessions.delete(token);
-    const secure = req.secure ? " Secure;" : "";
-    res.setHeader("Set-Cookie", `${cookieName}=;${secure} HttpOnly; Path=/; Max-Age=0`);
-    res.json({ ok: true });
-  });
-
-  app.get(`/api/${routePrefix}/session`, (req, res) => {
-    res.json({ authenticated: isAuthenticated(req) });
-  });
-
-  return { isAuthenticated, requireAuth };
-}
-
-const approverAuth = setupAuthRole({
-  roleName: "Approver",
-  cookieName: APPROVER_SESSION_COOKIE,
-  routePrefix: "approver",
-  passwordField: "approverPassword",
-});
-
-const requireApproverAuth = approverAuth.requireAuth;
 
 app.get("/", (req, res) => res.redirect("/production.html"));
 
@@ -722,7 +630,7 @@ app.post("/api/styles/:id/design-approval/send", (req, res) => {
 
 // Approver's decision - can only touch designApproval, never pricing or
 // anything else in the style.
-app.put("/api/styles/:id/design-approval", requireApproverAuth, (req, res) => {
+app.put("/api/styles/:id/design-approval", (req, res) => {
   const styles = readStyles();
   const idx = styles.findIndex((s) => s.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error: "Style not found" });
