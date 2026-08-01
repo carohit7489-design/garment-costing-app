@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Owner - Approval, Review &amp; Reporting</title>
+<title>Production Team - Design &amp; Execution</title>
 <link rel="stylesheet" href="styles.css" />
 <style>
   .tab-bar {
@@ -53,19 +53,19 @@
     <a href="production.html">Production - Actual Consumption</a>
     <a href="approver.html">Approver Review</a>
     <a href="inventory.html">Inventory Dashboard</a>
-    <a href="workspace.html" class="active">Owner (Approval/Review/Reporting)</a>
-    <a href="team.html">Production Team (Design/Execution)</a>
+    <a href="workspace.html">Owner (Approval/Review/Reporting)</a>
+    <a href="team.html" class="active">Production Team (Design/Execution)</a>
   </nav>
 </header>
 
 <div class="tab-bar">
-  <button class="tab-btn active" type="button" data-tab="approver">Design Approval &amp; Review</button>
-  <button class="tab-btn" type="button" data-tab="inventory">Reporting (Inventory)</button>
+  <button class="tab-btn active" type="button" data-tab="design">Design &amp; Costing</button>
+  <button class="tab-btn" type="button" data-tab="production">Actual Production</button>
 </div>
 
 <div class="tab-frame-wrap">
-  <iframe class="tab-frame active" data-tab="approver" src="approver.html?embed=1" title="Approver Review"></iframe>
-  <iframe class="tab-frame" data-tab="inventory" src="inventory.html?embed=1" title="Inventory Dashboard"></iframe>
+  <iframe class="tab-frame active" data-tab="design" src="owner.html?embed=1" title="Design & Costing"></iframe>
+  <iframe class="tab-frame" data-tab="production" src="production.html?embed=1" title="Production - Actual Consumption"></iframe>
 </div>
 
 <script>
